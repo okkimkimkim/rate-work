@@ -1,0 +1,6 @@
+# 요율 등 영업 기밀 데이터 - 저장소에 올리지 않는다
+*.xlsx
+~$*
+요율표.html
+druginform_mfg.json
+__pycache__/
