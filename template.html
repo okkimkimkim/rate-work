@@ -117,8 +117,9 @@ h2 span { color: var(--muted); font-weight: 400; font-size: 13px; }
 
 <script>
 const DATA = /*__DATA__*/null;
-// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지날/대조약, 보험코드]
-// 제조형태는 엑셀 D열이 아니라 보험코드로 Druginform DB에서 찾은 자체생산/위탁생산 값(build.py)
+// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지날/대조약, 보험코드, 포장]
+// 제조형태는 엑셀 D열이 아니라 보험코드로 Druginform DB에서 찾은 자체생산/위탁생산 값,
+// 포장은 식약처 제품허가 API의 포장단위(의약품안전나라 '포장정보'와 같은 값) - 둘 다 build.py가 채움
 const PAGE = 50;
 const $ = (id) => document.getElementById(id);
 const norm = (s) => String(s).toLowerCase().replace(/\s+/g, "");
@@ -138,7 +139,7 @@ try { Object.assign(state, JSON.parse(localStorage.getItem("rate-ui") || "{}"), 
 const save = () => { try { localStorage.setItem("rate-ui", JSON.stringify({ tab: state.tab, q: state.q, co: state.co, sort: state.sort })); } catch (e) {} };
 
 function card(r, cls) {
-  const [ing, rate, co, mfg, name, price, orig, ins] = r;
+  const [ing, rate, co, mfg, name, price, orig, ins, pack] = r;
   const mfgCls = !mfg ? "unknown" : mfg.startsWith("위탁") ? "consigned" : "self";
   return `<article class="card">
     <div class="body">
@@ -150,6 +151,7 @@ function card(r, cls) {
         ${orig ? `<span class="tag">대조약 ${esc(orig)}</span>` : ""}
         <span class="mfg ${mfgCls}">${mfg ? esc(mfg) : "제조형태 확인불가"}</span>
         ${ins ? `<span class="tag">보험 ${esc(ins)}</span>` : ""}
+        ${pack ? `<span class="tag">포장 ${esc(String(pack).replace(/\s*,\s*/g, ", "))}</span>` : ""}
       </div>
     </div>
     <div class="rate"><span class="l">코드</span><span class="n">${esc(rate)}</span></div>
@@ -178,7 +180,7 @@ function renderSearch() {
   $("list").innerHTML = html + (rest > 0 ? `<button class="more" id="more">${Math.min(rest, PAGE)}건 더 보기 (남은 ${rest.toLocaleString()}건)</button>` : "");
 }
 
-const HEAD_MAP = { "성분명": 0, "코드": 1, "제약사명": 2, "생동/생산": 3, "품목명": 4, "약가": 5, "오리지날/대조약": 6, "보험코드": 7 };
+const HEAD_MAP = { "성분명": 0, "코드": 1, "제약사명": 2, "생동/생산": 3, "품목명": 4, "약가": 5, "오리지날/대조약": 6, "보험코드": 7, "포장": 8 };
 function renderMonth() {
   let out = "", total = 0;
   for (const s of DATA.special) {
@@ -196,7 +198,7 @@ function renderMonth() {
       }).join("");
     } else {
       out += s.rows.map((r) => {
-        const row = Array(8).fill("");
+        const row = Array(9).fill("");
         h.forEach((k, i) => { if (k in HEAD_MAP) row[HEAD_MAP[k]] = r[i]; });
         return card(row, r[h.indexOf("분류(A)")]);
       }).join("");

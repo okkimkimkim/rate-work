@@ -6,7 +6,13 @@
 D열(생동/생산)은 엑셀 값을 쓰지 않고, H열 보험코드로 Druginform 서버 DB를 읽기 전용으로
 조회해 자체생산/위탁생산(위탁업체명) 값으로 바꿔 넣는다. 서버에 접속할 수 없으면 직전에
 받아둔 druginform_mfg.json 을 쓴다.
+
+포장정보(의약품안전나라 제품정보의 '포장정보'와 같은 값)는 식약처 제품허가 상세 공공 API의
+PACK_UNIT을 보험코드로 맞춰 넣는다. 전체 조회가 10분 남짓 걸려서 새 엑셀이 들어왔을 때만
+다시 받고(druginform_pack.json 이 엑셀보다 오래됐을 때), 평소에는 저장된 사본을 쓴다.
+API 키는 Druginform 서버의 것을 서버에서 읽어 쓰기만 한다(이 PC의 키는 미등록 상태).
 """
+import sys
 import json
 import re
 import subprocess
@@ -18,6 +24,7 @@ HERE = Path(__file__).parent
 TEMPLATE = HERE / "template.html"
 OUT = HERE / "요율표.html"
 MFG_CACHE = HERE / "druginform_mfg.json"
+PACK_CACHE = HERE / "druginform_pack.json"
 SERVER = "root@1.234.80.8"
 
 # 서버에서 실행할 읽기 전용 조회: 보험코드 → 위탁업체명(빈 문자열이면 자체생산).
@@ -33,6 +40,41 @@ for edi, cons, chk in c.execute("SELECT edi_code, consign_entp_name, mfg_checked
     for code in edi.split(','):
         if code.strip():
             out[code.strip()] = cons or ''
+print(json.dumps(out, ensure_ascii=False))
+"""
+
+# 서버에서 실행할 식약처 제품허가 상세 API 전체 조회: 보험코드 → 포장단위.
+# Druginform의 kdrug 클라이언트와 .env(API 키)를 읽어 쓰기만 하고, 서버에 아무것도 저장하지 않는다.
+# 목록 API(getDrugPrdtPrmsnInq)에는 PACK_UNIT이 없어서 상세 API를 페이지 단위로 받는다.
+PACK_QUERY = r"""
+import json, sys, time
+from kdrug import KdrugClient
+c = KdrugClient.from_env()
+out, page = {}, 1
+while True:
+    for attempt in range(4):
+        try:
+            rows = c._fetch(c.product_endpoint, {"numOfRows": 100, "pageNo": page, "type": "json"}, "product")
+            break
+        except Exception as e:
+            if attempt == 3:
+                raise
+            time.sleep(5)
+    if not rows:
+        break
+    for r in rows:
+        pack = (r.get("PACK_UNIT") or "").strip()
+        if not pack:
+            continue
+        cancelled = bool(r.get("CANCEL_DATE"))
+        for code in (r.get("EDI_CODE") or "").split(","):
+            code = code.strip()
+            if code and (code not in out or not cancelled):
+                out[code] = pack
+    if page % 50 == 0:
+        print(f"  {page}페이지, 보험코드 {len(out):,}건", file=sys.stderr, flush=True)
+    page += 1
+    time.sleep(0.2)
 print(json.dumps(out, ensure_ascii=False))
 """
 
@@ -100,28 +142,61 @@ def load_mfg():
         return json.loads(MFG_CACHE.read_text(encoding="utf-8")), "저장된 사본(서버 접속 실패)"
 
 
-def mfg_label(mfg, edi):
+def load_pack(src):
+    """새 엑셀이 들어왔을 때(사본이 엑셀보다 오래됐을 때)만 API로 다시 받는다."""
+    if PACK_CACHE.exists() and PACK_CACHE.stat().st_mtime >= src.stat().st_mtime:
+        return json.loads(PACK_CACHE.read_text(encoding="utf-8")), "저장된 사본"
+    print("포장정보를 식약처 API에서 받는 중 (10분 남짓)...", flush=True)
+    try:
+        res = subprocess.run(["ssh", SERVER, "cd /opt/drugapp && venv/bin/python -"], input=PACK_QUERY,
+                             stdout=subprocess.PIPE, stderr=sys.stderr, text=True, encoding="utf-8",
+                             timeout=3600, check=True)
+        pack = json.loads(res.stdout)
+        PACK_CACHE.write_text(json.dumps(pack, ensure_ascii=False), encoding="utf-8")
+        return pack, "식약처 API"
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        if PACK_CACHE.exists():
+            return json.loads(PACK_CACHE.read_text(encoding="utf-8")), f"이전 사본(API 조회 실패: {e})"
+        print(f"포장정보 조회 실패, 포장정보 없이 만듭니다: {e}")
+        return {}, "없음"
+
+
+def edi_key(edi):
     # 'D628800250'처럼 앞에 D가 붙은 보험코드는 같은 품목의 다른 유통채널 행 - D를 떼고 찾는다
     code = str(edi).strip()
     if code[:1] in ("D", "d") and code[1:].isdigit():
         code = code[1:]
+    return code
+
+
+def mfg_label(mfg, edi):
+    code = edi_key(edi)
     if code not in mfg:
         return ""
     return f"위탁생산 · {mfg[code]}" if mfg[code] else "자체생산"
 
 
-def apply_mfg(mfg, data):
-    hit = 0
+def apply_lookups(mfg, pack, data):
+    """D열 → 제조형태로 교체, 맨 끝에 포장정보 열 추가."""
+    hit_mfg = hit_pack = 0
     for r in data["rows"]:
         r[3] = mfg_label(mfg, r[7])
-        hit += bool(r[3])
+        r.append(pack.get(edi_key(r[7]), ""))
+        hit_mfg += bool(r[3])
+        hit_pack += bool(r[8])
     for s in data["special"]:
         h = s["header"] or []
-        if "생동/생산" in h and "보험코드" in h:
-            i, j = h.index("생동/생산"), h.index("보험코드")
+        if "보험코드" not in h:
+            continue
+        j = h.index("보험코드")
+        if "생동/생산" in h:
+            i = h.index("생동/생산")
             for r in s["rows"]:
                 r[i] = mfg_label(mfg, r[j])
-    return hit
+        h.append("포장")
+        for r in s["rows"]:
+            r.append(pack.get(edi_key(r[j]), ""))
+    return hit_mfg, hit_pack
 
 
 def main():
@@ -135,13 +210,15 @@ def main():
         "special": read_special(wb.worksheets[1]) if len(wb.worksheets) > 1 else [],
     }
     mfg, mfg_src = load_mfg()
-    hit = apply_mfg(mfg, data)
+    pack, pack_src = load_pack(src)
+    hit_mfg, hit_pack = apply_lookups(mfg, pack, data)
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/null", payload)
     OUT.write_text(html, encoding="utf-8")
     print(f"{src.name} → {OUT.name}: {len(data['rows'])}행, 특이사항 {len(data['special'])}구역, "
           f"{OUT.stat().st_size / 1e6:.1f}MB")
-    print(f"제조형태({mfg_src}): {hit:,}/{len(data['rows']):,}행 매칭")
+    print(f"제조형태({mfg_src}): {hit_mfg:,}/{len(data['rows']):,}행 매칭")
+    print(f"포장정보({pack_src}): {hit_pack:,}/{len(data['rows']):,}행 매칭")
 
 
 if __name__ == "__main__":
