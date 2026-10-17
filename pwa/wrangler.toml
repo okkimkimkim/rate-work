@@ -1,0 +1,23 @@
+# 마인약품 요율표 PWA (Cloudflare Workers + 정적 파일)
+name = "mine-rate"
+main = "src/worker.js"
+compatibility_date = "2026-05-01"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# 요율 데이터 저장소(data, data:etag). id는 처음 배포 전 `npx wrangler kv namespace create RATE_KV`로 만든 값.
+[[kv_namespaces]]
+binding = "RATE_KV"
+id = "ed732b3e2f024519b412309e45ed999c"
+
+# TOKEN_SECRET(토큰 서명키)은 파일에 두지 않고 `npx wrangler secret put TOKEN_SECRET`로 넣는다.
+
+# 코드·기기 등록 기록. KV는 쓰기가 다른 요청에 보이기까지 최대 1분쯤 걸려 그 사이 다른 기기가
+# 끼어들 수 있어서, 즉시 반영되는 D1(SQLite)에 둔다. 표 구조는 schema.sql.
+[[d1_databases]]
+binding = "DB"
+database_name = "mine-rate-db"
+database_id = "10901954-c0d7-4bd1-8fcc-db66e3ad45bf"

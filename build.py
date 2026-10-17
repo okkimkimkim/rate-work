@@ -1,7 +1,7 @@
 """요율표 엑셀 → 모바일 검색용 HTML 변환.
 
 사용법: 이 폴더에 새 요율표 엑셀(.xlsx)을 넣고 `python build.py` 실행.
-가장 최근에 수정된 엑셀 파일을 읽어 요율표.html 을 만든다.
+가장 최근에 수정된 엑셀 파일을 읽어 요율표.html(Artifact용)과 pwa/data.json(PWA용)을 만든다.
 
 D열(생동/생산)은 엑셀 값을 쓰지 않고, H열 보험코드로 Druginform 서버 DB를 읽기 전용으로
 조회해 자체생산/위탁생산(위탁업체명) 값으로 바꿔 넣는다. 서버에 접속할 수 없으면 직전에
@@ -25,6 +25,7 @@ TEMPLATE = HERE / "template.html"
 OUT = HERE / "요율표.html"
 MFG_CACHE = HERE / "druginform_mfg.json"
 PACK_CACHE = HERE / "druginform_pack.json"
+PWA_DATA = HERE / "pwa" / "data.json"
 SERVER = "root@1.234.80.8"
 
 # 서버에서 실행할 읽기 전용 조회: 보험코드 → 위탁업체명(빈 문자열이면 자체생산).
@@ -215,6 +216,8 @@ def main():
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/null", payload)
     OUT.write_text(html, encoding="utf-8")
+    # PWA(pwa/)용 데이터 - 같은 내용을 JSON으로. `python pwa/admin.py upload-data`로 Cloudflare에 올린다.
+    PWA_DATA.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{src.name} → {OUT.name}: {len(data['rows'])}행, 특이사항 {len(data['special'])}구역, "
           f"{OUT.stat().st_size / 1e6:.1f}MB")
     print(f"제조형태({mfg_src}): {hit_mfg:,}/{len(data['rows']):,}행 매칭")

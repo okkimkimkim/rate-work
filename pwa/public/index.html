@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>마인약품</title>
+<meta name="theme-color" content="#0b6b5f">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="마인약품">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- 접속 전 화면: 코드 입력 / 홈 화면 추가 안내 / 카톡 안에서 열었을 때 안내 -->
+<section id="gate" class="gate" hidden>
+  <div class="gate-box">
+    <img src="/icons/icon-192.png" alt="" class="gate-logo" width="64" height="64">
+    <h1>마인약품 요율표</h1>
+
+    <div id="gate-code" hidden>
+      <p class="gate-lead">전달받은 개인 코드를 입력해 주세요.<br>처음 한 번만 입력하면 이 폰에서 계속 쓸 수 있어요.</p>
+      <form id="code-form" autocomplete="off">
+        <input id="code" type="text" inputmode="text" autocapitalize="characters" spellcheck="false"
+               placeholder="예) 7K3P-Q9XA" aria-label="개인 코드">
+        <button type="submit" id="code-submit">시작하기</button>
+      </form>
+      <p id="code-msg" class="gate-msg" role="alert"></p>
+      <p class="gate-note">코드는 처음 입력한 폰 1대에서만 쓸 수 있어요.</p>
+    </div>
+
+    <div id="gate-ios" hidden>
+      <p class="gate-lead">아이폰은 <b>먼저 홈 화면에 추가</b>한 뒤,<br>홈 화면의 <b>마인약품</b> 아이콘에서 코드를 입력해 주세요.</p>
+      <ol class="steps">
+        <li>화면 아래(또는 위)의 <b>공유 버튼</b> <span class="ios-share" aria-hidden="true"></span> 을 누르세요.</li>
+        <li>목록에서 <b>홈 화면에 추가</b>를 누르세요.</li>
+        <li>홈 화면에 생긴 <b>마인약품</b> 아이콘을 눌러 코드를 입력하세요.</li>
+      </ol>
+      <p class="gate-note">사파리에서 코드를 먼저 넣으면 홈 화면 앱이 다른 기기로 인식돼 잠길 수 있어요.</p>
+    </div>
+
+    <div id="gate-inapp" hidden>
+      <p class="gate-lead">카카오톡 안에서는 앱으로 설치할 수 없어요.<br><b>휴대폰 브라우저</b>로 열어 주세요.</p>
+      <a id="open-external" class="btn" href="#">브라우저로 열기</a>
+      <p class="gate-note">버튼이 안 되면 오른쪽 위 ⋮ (또는 아래 공유) 메뉴에서<br>“다른 브라우저로 열기”를 눌러 주세요.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 앱 화면 -->
+<div id="app" hidden>
+  <div id="banner" class="banner" hidden></div>
+  <header>
+    <div class="titlebar">
+      <h1>마인약품</h1>
+      <span class="src" id="src"></span>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-search" aria-selected="true">전체 검색</button>
+      <button class="tab" role="tab" id="tab-month" aria-selected="false">이달 변동</button>
+    </div>
+    <div class="searchrow" id="searchrow">
+      <div class="search">
+        <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="성분·품목·제약사·대조약·보험코드">
+        <button id="clear" aria-label="검색어 지우기" hidden>×</button>
+      </div>
+      <input id="co" type="search" autocomplete="off" placeholder="제약사" aria-label="제약사로 거르기">
+      <select id="sort" aria-label="정렬">
+        <option value="base">기본순</option>
+        <option value="rate">코드↓</option>
+        <option value="price">약가↓</option>
+      </select>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+  <div id="install" class="install" hidden>
+    <span>홈 화면에 앱으로 설치하면 더 빨리 열 수 있어요.</span>
+    <button id="install-btn" type="button">앱 설치</button>
+    <button id="install-close" type="button" aria-label="닫기">×</button>
+  </div>
+  <p id="notice" class="notice" hidden></p>
+  <main id="list"><p class="empty">요율표를 불러오는 중…</p></main>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
