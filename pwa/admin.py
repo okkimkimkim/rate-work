@@ -144,9 +144,10 @@ def cmd_add(names):
         now = int(datetime.now().timestamp() * 1000)
         d1(f"INSERT INTO codes (id, name, created_at) VALUES ({sql_str(code_hash(code))}, {sql_str(name)}, {now})")
         rows.append({"name": name, "code": code, "created": datetime.now(KST).strftime("%Y-%m-%d")})
+        # 서버에 넣은 즉시 저장 - 여러 명 중간에 실패해도 이미 서버에 들어간 사람의 코드 원문을 잃지 않게
+        if not LOCAL:
+            write_codes(rows)
         print(f"{name}: {code}")
-    if not LOCAL:
-        write_codes(rows)
 
 
 def write_codes(rows):
@@ -269,8 +270,8 @@ def cmd_upload_data():
     if not DATA_JSON.exists():
         raise SystemExit("data.json이 없습니다. 먼저 상위 폴더에서 `python build.py`를 실행하세요.")
     etag = hashlib.sha1(DATA_JSON.read_bytes()).hexdigest()[:16]
-    kv("put", "data", "--path", str(DATA_JSON))
-    kv("put", "data:etag", etag)
+    # 버전은 따로 키를 두지 않고 data의 metadata로 함께 올린다 (worker.js 설명 참고)
+    kv("put", "data", "--path", str(DATA_JSON), "--metadata", json.dumps({"etag": etag}))
     print(f"데이터 업로드 완료 ({DATA_JSON.stat().st_size / 1e6:.1f}MB, 버전 {etag})")
 
 

@@ -7,8 +7,9 @@
 //   조건부 UPDATE로 해서 동시에 두 기기가 들어와도 하나만 성공한다. (KV는 쓰기가 퍼지는 데 1분쯤 걸려
 //   처음엔 KV에 뒀다가 실서버 시험에서 두 번째 기기가 끼어드는 걸 보고 D1로 옮김)
 // KV 키
-//   data        build.py가 만든 요율 데이터 JSON (admin.py upload-data)
-//   data:etag   data가 바뀔 때마다 새 값
+//   data        build.py가 만든 요율 데이터 JSON (admin.py upload-data). 버전(etag)은 같은 키의 metadata에
+//               붙여 둔다 — 키를 따로 두면 KV가 지역마다 늦게 반영될 때 "새 버전 표시 + 옛 데이터"가 섞여
+//               앱이 옛 데이터를 최신으로 착각할 수 있어서.
 //
 // 기기 고정: 코드를 처음 입력한 기기(device = 앱이 만든 무작위 ID)에 묶는다. 다른 기기에서 같은 코드를
 // 넣으면 거절. 단, 첫 등록 후 10분 안에는 한 번 옮길 수 있다(아이폰 사파리 → 홈 화면 앱처럼 저장공간이
@@ -98,6 +99,7 @@ async function data(request, env) {
   }
   const rec = await env.DB.prepare("SELECT active, device, last_seen FROM codes WHERE id = ?").bind(id).first();
   if (!rec || !rec.active) return json({ error: "revoked", message: "사용이 중지된 코드입니다. 관리자에게 문의해 주세요." }, 401);
+  if (!rec.device) return json({ error: "reset", message: "기기 등록이 초기화됐어요. 코드를 다시 입력해 주세요." }, 401);
   if (rec.device !== device) return json({ error: "device_locked", message: "다른 기기에 등록된 코드입니다. 관리자에게 기기 초기화를 요청해 주세요." }, 401);
 
   const now = Date.now();
@@ -105,14 +107,17 @@ async function data(request, env) {
     await env.DB.prepare("UPDATE codes SET last_seen = ? WHERE id = ?").bind(now, id).run();
   }
 
-  const etag = (await env.RATE_KV.get("data:etag")) || "none";
-  const quoted = `"${etag}"`;
-  if (request.headers.get("if-none-match") === quoted) {
+  // 데이터는 글자로 바꾸지 않고 그대로 흘려보낸다(무료 플랜 CPU 시간 10ms 제한 대비)
+  const { value, metadata } = await env.RATE_KV.getWithMetadata("data", "stream");
+  if (!value) return json({ error: "no_data", message: "아직 데이터가 올라가지 않았습니다." }, 503);
+  const quoted = `"${(metadata && metadata.etag) || "none"}"`;
+  // 폰이 압축 응답을 받으면 Cloudflare가 etag를 W/"..."(약한 표시)로 바꿔 보내므로, 돌아온 값의 W/를 떼고 비교
+  const sent = (request.headers.get("if-none-match") || "").replace(/^W\//, "");
+  if (sent === quoted) {
+    await value.cancel();
     return new Response(null, { status: 304, headers: { etag: quoted, "cache-control": "no-store" } });
   }
-  const body = await env.RATE_KV.get("data");
-  if (!body) return json({ error: "no_data", message: "아직 데이터가 올라가지 않았습니다." }, 503);
-  return new Response(body, {
+  return new Response(value, {
     headers: { "content-type": "application/json; charset=utf-8", etag: quoted, "cache-control": "no-store" },
   });
 }
