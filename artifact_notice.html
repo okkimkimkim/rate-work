@@ -1,0 +1,51 @@
+<title>마인약품</title>
+<style>
+/* 기존 Artifact 링크 자리에 두는 이전 안내. 요율 데이터는 넣지 않는다 (2026-10-20부터 PWA 앱으로 이전) */
+:root {
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --ink: #17211f;
+  --muted: #5d6b68;
+  --line: #dde3e1;
+  --accent: #0b6b5f;
+  --accent-soft: #e2f1ee;
+  --font: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101615; --surface: #18201f; --ink: #e6ecea; --muted: #94a3a0; --line: #2a3533;
+    --accent: #4fc1b0; --accent-soft: #1b3330;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101615; --surface: #18201f; --ink: #e6ecea; --muted: #94a3a0; --line: #2a3533;
+  --accent: #4fc1b0; --accent-soft: #1b3330;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 420px; margin: 0 auto; padding-inline: 16px; padding-block: 48px; display: grid; gap: 16px; text-align: center; }
+.logo { justify-self: center; width: 64px; height: 64px; border-radius: 16px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 20px; letter-spacing: -0.02em; }
+h1 { margin: 0; font-size: 21px; text-wrap: balance; }
+p { margin: 0; color: var(--muted); }
+.btn { display: block; border-radius: 10px; padding: 14px; background: var(--accent); color: var(--surface); font-weight: 700; font-size: 16px; text-decoration: none; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sub { color: var(--accent); font-weight: 700; text-decoration: none; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; text-align: left; display: grid; gap: 6px; font-size: 14px; }
+.box b { color: var(--ink); }
+.addr { font-size: 13px; color: var(--muted); word-break: break-all; user-select: all; }
+</style>
+
+<div class="wrap">
+  <div class="logo" aria-hidden="true">마인</div>
+  <h1>마인약품 요율표가 앱으로 옮겨졌어요</h1>
+  <p>이 페이지에서는 더 이상 요율표를 볼 수 없어요.<br>아래 앱을 설치해서 이용해 주세요.</p>
+  <a class="btn" href="https://mine-rate.mine-pharm.workers.dev" target="_blank" rel="noopener">마인약품 앱 열기</a>
+  <a class="sub" href="https://mine-rate.mine-pharm.workers.dev/install" target="_blank" rel="noopener">설치 방법 그림으로 보기</a>
+  <div class="box">
+    <span><b>개인 코드가 필요해요.</b> 앱을 처음 열면 코드를 입력하는 화면이 나와요.</span>
+    <span>코드를 받지 못하셨다면 마인약품 담당자에게 문의해 주세요.</span>
+    <span class="addr">앱 주소: https://mine-rate.mine-pharm.workers.dev</span>
+  </div>
+</div>
