@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>마인약품 앱 설치 방법</title>
+<meta name="theme-color" content="#0b6b5f">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="stylesheet" href="/style.css">
+<style>
+/* 설치 안내: 폰 화면을 단순화한 그림 + 순서. 그림 속 강조(주황 테두리)가 "여기를 누르세요" */
+.guide { max-width: 520px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 18px; }
+.guide-head { display: flex; align-items: center; gap: 12px; }
+.guide-head img { border-radius: 12px; }
+.guide-head h1 { font-size: 20px; margin: 0; }
+.guide-head p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.os-tabs { display: flex; gap: 6px; }
+.os-tabs button { flex: 1; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 9px 0; font-weight: 700; cursor: pointer; }
+.os-tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.warn { background: var(--consign-soft); color: var(--consign); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.steps-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; grid-template-columns: 1fr 132px; gap: 14px; align-items: center; counter-increment: s; }
+.step .txt { min-width: 0; }
+.step .txt b.n::before { content: counter(s); display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--surface); font-size: 13px; margin-right: 6px; vertical-align: 1px; }
+.step .txt p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+/* 폰 그림 */
+.phone { width: 132px; height: 230px; border: 3px solid var(--ink); border-radius: 20px; background: var(--bg); position: relative; overflow: hidden; font-size: 9px; color: var(--ink); }
+.phone .bar { position: absolute; left: 0; right: 0; height: 26px; background: var(--surface); border-color: var(--line); display: flex; align-items: center; justify-content: space-around; padding: 0 6px; }
+.phone .bar.top { top: 0; border-bottom: 1px solid var(--line); }
+.phone .bar.bottom { bottom: 0; border-top: 1px solid var(--line); }
+.phone .url { flex: 1; height: 14px; border-radius: 7px; background: var(--line); margin: 0 4px; }
+.phone .ic { width: 14px; height: 14px; display: grid; place-items: center; font-weight: 700; font-size: 11px; color: var(--muted); }
+.hl { outline: 3px solid #f08a24; outline-offset: 2px; border-radius: 4px; color: #f08a24 !important; }
+.share-ic { width: 10px; height: 11px; border: 1.5px solid currentColor; border-top: 0; border-radius: 0 0 2px 2px; position: relative; }
+.share-ic::before { content: ""; position: absolute; left: 50%; top: -5px; width: 1.5px; height: 9px; background: currentColor; transform: translateX(-50%); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-top-left-radius: 12px; border-top-right-radius: 12px; padding: 8px; display: grid; gap: 4px; box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.12); }
+.sheet .row { height: 18px; border-radius: 5px; background: var(--bg); display: flex; align-items: center; padding: 0 6px; }
+.sheet .row.hl { background: #fff3e6; font-weight: 700; }
+.menu { position: absolute; right: 6px; top: 30px; width: 104px; background: var(--surface); border-radius: 8px; padding: 5px; display: grid; gap: 3px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
+.menu .row { height: 16px; border-radius: 4px; background: var(--bg); display: flex; align-items: center; padding: 0 5px; white-space: nowrap; font-size: 8.5px; }
+.menu .row.hl { background: #fff3e6; font-weight: 700; }
+.home { position: absolute; inset: 28px 10px auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px; justify-items: center; }
+.home i { width: 26px; height: 26px; border-radius: 7px; background: var(--line); }
+.home .app { display: grid; justify-items: center; gap: 2px; white-space: nowrap; font-size: 8px; }
+.home .app img { width: 28px; height: 28px; border-radius: 7px; }
+.code-mini { position: absolute; inset: 40px 10px auto; display: grid; gap: 6px; justify-items: center; text-align: center; }
+.code-mini img { width: 28px; height: 28px; border-radius: 7px; }
+.code-mini .box { width: 100%; height: 20px; border: 1.5px solid var(--accent); border-radius: 5px; display: grid; place-items: center; letter-spacing: 1px; font-weight: 700; }
+.code-mini .btn-mini { width: 100%; height: 20px; border-radius: 5px; background: var(--accent); color: var(--surface); display: grid; place-items: center; font-weight: 700; }
+.dialog { position: absolute; left: 10px; right: 10px; top: 70px; background: var(--surface); border-radius: 10px; padding: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); display: grid; gap: 6px; }
+.dialog .acts { display: flex; justify-content: flex-end; gap: 8px; font-weight: 700; color: var(--accent); }
+.kakao-top { position: absolute; left: 0; right: 0; top: 0; height: 26px; background: #fee500; display: flex; align-items: center; justify-content: flex-end; padding: 0 6px; color: #3a1d1d; }
+.done { background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 12px; font-size: 14px; }
+.foot { color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
+.back { color: var(--accent); font-weight: 700; text-decoration: none; }
+@media (max-width: 360px) { .step { grid-template-columns: 1fr; justify-items: center; } }
+</style>
+</head>
+<body>
+<div class="guide">
+  <div class="guide-head">
+    <img src="/icons/icon-192.png" alt="" width="52" height="52">
+    <div>
+      <h1>마인약품 앱 설치 방법</h1>
+      <p>처음 한 번만 하면 돼요. 2~3분이면 끝나요.</p>
+    </div>
+  </div>
+
+  <div class="os-tabs" role="tablist">
+    <button role="tab" id="t-ios" aria-selected="true">아이폰</button>
+    <button role="tab" id="t-and" aria-selected="false">안드로이드</button>
+  </div>
+
+  <!-- 아이폰 -->
+  <section id="p-ios" class="guide-part">
+    <p class="warn"><b>꼭 이 순서대로!</b> 사파리에서 코드를 먼저 넣으면 앱이 잠길 수 있어요. 홈 화면에 먼저 추가한 다음, 아이콘을 눌러 코드를 넣으세요.</p>
+    <ol class="steps-list">
+      <li class="step">
+        <div class="txt"><b class="n">카톡 링크를 사파리로 열기</b>
+          <p>카톡에서 링크를 누른 뒤, 오른쪽 위(또는 아래) <b>⋯ 메뉴</b> → <b>Safari로 열기</b>를 누르세요.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="kakao-top"><span class="ic hl">⋯</span></div>
+          <div class="menu" style="top:30px"><div class="row">링크 복사</div><div class="row hl">Safari로 열기</div><div class="row">공유</div></div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="txt"><b class="n">공유 버튼 누르기</b>
+          <p>사파리 화면 아래쪽 가운데의 <b>네모에 위 화살표</b> 모양 버튼이에요.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="bar top"><span class="url"></span></div>
+          <div class="bar bottom"><span class="ic">‹</span><span class="ic">›</span><span class="ic hl"><span class="share-ic"></span></span><span class="ic">□</span><span class="ic">⧉</span></div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="txt"><b class="n">홈 화면에 추가</b>
+          <p>목록을 아래로 내려 <b>홈 화면에 추가</b>를 누르고, 오른쪽 위 <b>추가</b>를 누르세요.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="bar top"><span class="url"></span></div>
+          <div class="sheet"><div class="row">복사</div><div class="row">읽기 목록에 추가</div><div class="row hl">홈 화면에 추가 ⊞</div><div class="row">즐겨찾기 추가</div></div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="txt"><b class="n">홈 화면의 아이콘 누르기</b>
+          <p>바탕화면에 생긴 <b>마인약품</b> 아이콘을 눌러 앱을 여세요.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="home"><i></i><i></i><i></i><i></i><span class="app"><img class="hl" src="/icons/icon-192.png" alt="">마인약품</span><i></i></div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="txt"><b class="n">개인 코드 입력</b>
+          <p>전달받은 코드를 넣고 <b>시작하기</b>를 누르면 끝!</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="code-mini"><img src="/icons/icon-192.png" alt=""><b>마인약품 요율표</b><span class="box hl">● ● ● ● ● ●</span><span class="btn-mini">시작하기</span></div>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <!-- 안드로이드 -->
+  <section id="p-and" class="guide-part" hidden>
+    <ol class="steps-list">
+      <li class="step">
+        <div class="txt"><b class="n">카톡 링크를 크롬으로 열기</b>
+          <p>카톡에서 링크를 누르면 나오는 화면에서 <b>브라우저로 열기</b> 버튼을 누르거나, 오른쪽 위 <b>⋮</b> → <b>다른 브라우저로 열기</b>.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="kakao-top"><span class="ic hl">⋮</span></div>
+          <div class="menu"><div class="row">링크 복사</div><div class="row hl">다른 브라우저로 열기</div><div class="row">공유</div></div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="txt"><b class="n">개인 코드 입력</b>
+          <p>전달받은 코드를 넣고 <b>시작하기</b>를 누르세요.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="bar top"><span class="url"></span><span class="ic">⋮</span></div>
+          <div class="code-mini"><img src="/icons/icon-192.png" alt=""><b>마인약품 요율표</b><span class="box hl">● ● ● ● ● ●</span><span class="btn-mini">시작하기</span></div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="txt"><b class="n">앱 설치</b>
+          <p>화면의 <b>앱 설치</b> 버튼을 누르거나, 오른쪽 위 <b>⋮</b> → <b>앱 설치</b>(또는 <b>홈 화면에 추가</b>) → <b>설치</b>.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="bar top"><span class="url"></span><span class="ic hl">⋮</span></div>
+          <div class="menu"><div class="row">새 탭</div><div class="row">북마크</div><div class="row hl">앱 설치</div><div class="row">공유</div></div>
+        </div>
+      </li>
+      <li class="step">
+        <div class="txt"><b class="n">홈 화면 아이콘으로 열기</b>
+          <p>다음부터는 바탕화면의 <b>마인약품</b> 아이콘만 누르면 바로 열려요. 코드를 다시 넣을 필요 없어요.</p></div>
+        <div class="phone" aria-hidden="true">
+          <div class="home"><i></i><i></i><i></i><i></i><span class="app"><img class="hl" src="/icons/icon-192.png" alt="">마인약품</span><i></i></div>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <p class="done">설치 후에는 인터넷이 잠깐 끊겨도 마지막으로 받은 요율표를 볼 수 있어요.</p>
+  <div class="foot">
+    <span>· 코드는 <b>처음 입력한 폰 1대</b>에서만 쓸 수 있어요. 다른 사람에게 알려주지 마세요.</span>
+    <span>· 폰을 바꾸거나 앱을 지웠다가 다시 깔면 잠길 수 있어요. 그때는 연락 주세요.</span>
+    <a class="back" href="/">← 앱으로 돌아가기</a>
+  </div>
+</div>
+<script>
+// 처음 열 때 기기에 맞는 탭을 고른다. ?os=ios / ?os=android 로 고정 가능(안내 이미지 만들 때 사용)
+const ua = navigator.userAgent;
+const q = new URLSearchParams(location.search).get("os");
+const isIOS = q ? q === "ios" : /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isAnd = q ? q === "android" : /Android/i.test(ua);
+function pick(os) {
+  document.getElementById("t-ios").setAttribute("aria-selected", os === "ios");
+  document.getElementById("t-and").setAttribute("aria-selected", os === "and");
+  document.getElementById("p-ios").hidden = os !== "ios";
+  document.getElementById("p-and").hidden = os !== "and";
+}
+document.getElementById("t-ios").onclick = () => pick("ios");
+document.getElementById("t-and").onclick = () => pick("and");
+pick(isAnd && !isIOS ? "and" : "ios");
+</script>
+</body>
+</html>

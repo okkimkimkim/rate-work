@@ -123,3 +123,5 @@ img { max-width: 100%; }
 
 /* 브라우저 기본 검색창 지우기(×) 버튼 숨김 - 앱 자체 × 버튼과 겹치지 않게 */
 input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+.gate-link { color: var(--accent); font-weight: 700; font-size: 14px; text-decoration: none; }

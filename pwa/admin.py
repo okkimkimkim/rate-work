@@ -11,12 +11,19 @@
   python admin.py import                codes.csv의 코드를 서버 표에 다시 넣기 (표를 새로 만들었을 때)
   python admin.py upload-data           build.py가 만든 data.json을 올리기 (2달마다)
   python admin.py deploy                앱 화면·배너·서버 코드 배포
+  python admin.py backup-setup          처음 한 번: 백업 비밀번호 정하기 (VS Code 터미널에서 직접 실행)
+  python admin.py backup                codes.csv → codes.csv.enc 암호화 백업 (add·delete 때 자동으로도 함)
+  python admin.py restore               codes.csv.enc → codes.csv 복원 (백업 비밀번호 필요)
 
 공통 옵션 --local : 실제 Cloudflare 대신 이 PC의 시험용 저장소(wrangler dev)에 적용.
 codes.csv 는 코드 원문이 들어 있어 git에 올리지 않는다(서버 D1에는 코드의 해시만 저장됨).
+대신 암호화한 codes.csv.enc 를 git에 올려 백업한다. 잠그는 열쇠(backup_public.pem)는 그대로 두고,
+여는 열쇠(backup_private.pem.enc)는 백업 비밀번호로 잠가 둔다 → 백업은 비밀번호 없이 자동, 복원만 비밀번호.
 코드·기기 기록은 D1(mine-rate-db의 codes 표), 요율 데이터는 KV(RATE_KV의 data)에 있다.
 """
+import base64
 import csv
+import getpass
 import hashlib
 import json
 import re
@@ -29,6 +36,9 @@ from pathlib import Path
 HERE = Path(__file__).parent
 CODES_CSV = HERE / "codes.csv"
 DATA_JSON = HERE / "data.json"
+BACKUP_ENC = HERE / "codes.csv.enc"
+BACKUP_PUB = HERE / "backup_public.pem"
+BACKUP_PRIV = HERE / "backup_private.pem.enc"
 WRANGLER_TOML = HERE / "wrangler.toml"
 BINDING = "RATE_KV"
 DB_NAME = "mine-rate-db"
@@ -46,8 +56,13 @@ if "--code" in ARGS:
 
 def wrangler(*args, input_text=None, check=True):
     cmd = ["npx", "wrangler", *args]
-    res = subprocess.run(cmd, cwd=HERE, input=input_text, capture_output=True, text=True,
-                         encoding="utf-8", shell=(sys.platform == "win32"))
+    for attempt in range(2):
+        res = subprocess.run(cmd, cwd=HERE, input=input_text, capture_output=True, text=True,
+                             encoding="utf-8", shell=(sys.platform == "win32"))
+        # 로그인 토큰이 만료된 직후 첫 요청은 Cloudflare가 7403(권한 없음)으로 거절하고,
+        # 그 사이 wrangler가 토큰을 새로 받아 두 번째 요청은 성공한다 → 한 번만 다시 시도
+        if res.returncode == 0 or "7403" not in (res.stdout + res.stderr):
+            break
     if check and res.returncode != 0:
         raise SystemExit(f"wrangler 실패: {' '.join(args)}\n{res.stderr or res.stdout}")
     return res.stdout
@@ -139,6 +154,72 @@ def write_codes(rows):
         w = csv.DictWriter(f, fieldnames=["name", "code", "created"])
         w.writeheader()
         w.writerows(rows)
+    if BACKUP_PUB.exists():
+        cmd_backup(quiet=True)
+    else:
+        print("※ 백업 비밀번호가 아직 없어 암호화 백업을 건너뜀 (python admin.py backup-setup)")
+
+
+# ── 암호화 백업 (RSA로 감싼 AES-GCM: 백업은 공개키만으로, 복원은 비밀번호로 연 개인키로) ──────
+def cmd_backup_setup():
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    if BACKUP_PRIV.exists():
+        raise SystemExit("이미 백업 비밀번호가 있습니다. 바꾸려면 backup_public.pem·backup_private.pem.enc를 지운 뒤 다시 실행하세요.")
+    pw = getpass.getpass("백업 비밀번호 (8자 이상, 화면에 안 보임): ")
+    if len(pw) < 8:
+        raise SystemExit("8자 이상으로 정해 주세요.")
+    if getpass.getpass("한 번 더: ") != pw:
+        raise SystemExit("두 비밀번호가 다릅니다.")
+    key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+    BACKUP_PRIV.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                              serialization.BestAvailableEncryption(pw.encode())))
+    BACKUP_PUB.write_bytes(key.public_key().public_bytes(serialization.Encoding.PEM,
+                                                         serialization.PublicFormat.SubjectPublicKeyInfo))
+    print("백업 비밀번호 설정 완료. 이 비밀번호는 어디에도 저장되지 않으니 따로 꼭 기록해 두세요.")
+    if CODES_CSV.exists():
+        cmd_backup()
+
+
+def cmd_backup(quiet=False):
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    if not BACKUP_PUB.exists():
+        raise SystemExit("먼저 python admin.py backup-setup 으로 백업 비밀번호를 정하세요.")
+    pub = serialization.load_pem_public_key(BACKUP_PUB.read_bytes())
+    data_key, nonce = AESGCM.generate_key(bit_length=256), secrets.token_bytes(12)
+    oaep = padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+    b64 = lambda b: base64.b64encode(b).decode()
+    BACKUP_ENC.write_text(json.dumps({
+        "v": 1,
+        "key": b64(pub.encrypt(data_key, oaep)),
+        "nonce": b64(nonce),
+        "data": b64(AESGCM(data_key).encrypt(nonce, CODES_CSV.read_bytes(), None)),
+        "at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
+    }), encoding="utf-8")
+    if not quiet:
+        print(f"암호화 백업 완료: {BACKUP_ENC.name} (커밋·싱크하면 GitHub에도 백업됨)")
+
+
+def cmd_restore():
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    if not (BACKUP_ENC.exists() and BACKUP_PRIV.exists()):
+        raise SystemExit("codes.csv.enc 또는 backup_private.pem.enc가 없습니다. 저장소를 최신으로 받았는지 확인하세요.")
+    pw = getpass.getpass("백업 비밀번호: ")
+    try:
+        key = serialization.load_pem_private_key(BACKUP_PRIV.read_bytes(), password=pw.encode())
+    except (ValueError, TypeError):
+        raise SystemExit("비밀번호가 맞지 않습니다.")
+    box = json.loads(BACKUP_ENC.read_text(encoding="utf-8"))
+    oaep = padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+    data_key = key.decrypt(base64.b64decode(box["key"]), oaep)
+    plain = AESGCM(data_key).decrypt(base64.b64decode(box["nonce"]), base64.b64decode(box["data"]), None)
+    out = CODES_CSV if not CODES_CSV.exists() else HERE / "codes.restored.csv"
+    out.write_bytes(plain)
+    print(f"복원 완료: {out.name} (백업 시각 {box.get('at', '?')})")
 
 
 def cmd_import():
@@ -219,6 +300,12 @@ def main():
         cmd_delete(rest[0])
     elif cmd == "import":
         cmd_import()
+    elif cmd == "backup-setup":
+        cmd_backup_setup()
+    elif cmd == "backup":
+        cmd_backup()
+    elif cmd == "restore":
+        cmd_restore()
     elif cmd == "upload-data":
         cmd_upload_data()
     elif cmd == "deploy":

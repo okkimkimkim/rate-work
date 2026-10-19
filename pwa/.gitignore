@@ -5,3 +5,4 @@ node_modules/
 # 코드 원문(개인 코드)과 요율 데이터는 저장소에 올리지 않는다
 codes.csv
 data.json
+codes.restored.csv
