@@ -66,6 +66,7 @@
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="tab-search" aria-selected="true">전체 검색</button>
       <button class="tab" role="tab" id="tab-month" aria-selected="false">이달 변동</button>
+      <button class="tab" role="tab" id="tab-fav" aria-selected="false">★ 즐겨찾기</button>
     </div>
     <div class="searchrow" id="searchrow">
       <div class="search">
@@ -78,6 +79,11 @@
         <option value="rate">코드↓</option>
         <option value="price">약가↓</option>
       </select>
+    </div>
+    <div class="filters" id="filters" role="group" aria-label="생산형태로 거르기">
+      <button type="button" class="chip" data-mfg="all">전체</button>
+      <button type="button" class="chip" data-mfg="self">자체생산</button>
+      <button type="button" class="chip" data-mfg="consigned">위탁생산</button>
     </div>
     <div class="meta" id="meta"></div>
   </header>

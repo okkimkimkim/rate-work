@@ -125,3 +125,17 @@ img { max-width: 100%; }
 input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 
 .gate-link { color: var(--accent); font-weight: 700; font-size: 14px; text-decoration: none; }
+
+/* 생산형태 필터 칩 */
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.chip[data-mfg="consigned"][aria-pressed="true"] { border-color: var(--consign); background: var(--consign-soft); color: var(--consign); }
+
+/* 즐겨찾기 별 */
+.namerow { display: flex; align-items: flex-start; gap: 4px; }
+.namerow .name { flex: 1; min-width: 0; }
+.fav { flex: none; border: 0; background: none; padding: 0 2px; margin-top: -2px; font-size: 22px; line-height: 1; color: var(--muted); cursor: pointer; }
+.fav[aria-pressed="true"] { color: #f0a020; }
+.fav-missing { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--consign-soft); color: var(--consign); font-size: 13px; }
+.fav-missing button { border: 0; border-radius: 8px; padding: 5px 10px; background: var(--consign); color: var(--surface); font-weight: 700; cursor: pointer; }

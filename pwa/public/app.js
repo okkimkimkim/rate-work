@@ -1,7 +1,7 @@
 // 마인약품 요율표 PWA
 // 1) 접속: 개인 코드 + 이 기기의 무작위 ID로 /api/activate → 토큰을 받아 보관 (기기 1대 고정은 서버가 판단)
 // 2) 데이터: 토큰으로 /api/data를 받아 기기 안 캐시에 보관 → 다음부터는 캐시로 바로 띄우고 뒤에서 새 버전 확인
-// 3) 화면: Artifact 버전(../template.html)과 같은 검색·이달 변동 화면 + 상단 배너(banner.json)
+// 3) 화면: 검색(+생산형태 필터)·이달 변동·즐겨찾기 탭 + 상단 배너(banner.json)
 
 const PAGE = 50;
 const $ = (id) => document.getElementById(id);
@@ -196,17 +196,31 @@ function setData(d) {
   render();
 }
 
-let state = { tab: "search", q: "", co: "", sort: "base", shown: PAGE };
+let state = { tab: "search", q: "", co: "", sort: "base", mfg: "all", shown: PAGE };
 try { Object.assign(state, JSON.parse(store.get("rate-ui") || "{}"), { shown: PAGE }); } catch (e) {}
-const save = () => store.set("rate-ui", JSON.stringify({ tab: state.tab, q: state.q, co: state.co, sort: state.sort }));
+const save = () => store.set("rate-ui", JSON.stringify({ tab: state.tab, q: state.q, co: state.co, sort: state.sort, mfg: state.mfg }));
+
+// 즐겨찾기: 이 폰에만 저장. 보험코드로 기억해서 2달마다 데이터가 바뀌어도 그대로 남는다
+// (보험코드는 행마다 유일 - 앞에 D가 붙은 다른 유통채널 행도 따로 구분됨). 최근에 추가한 것이 앞.
+const favKey = (r) => (r[7] ? "e:" + r[7] : "n:" + r[2] + "|" + r[4]);
+let favs = [];
+try { favs = JSON.parse(store.get("mr-favs") || "[]"); } catch (e) {}
+const isFav = (k) => favs.includes(k);
+function toggleFav(k) {
+  favs = isFav(k) ? favs.filter((x) => x !== k) : [k, ...favs];
+  store.set("mr-favs", JSON.stringify(favs));
+}
+
+const mfgKind = (mfg) => (!mfg ? "unknown" : String(mfg).startsWith("위탁") ? "consigned" : "self");
 
 function card(r, cls) {
   const [ing, rate, co, mfg, name, price, orig, ins, pack] = r;
-  const mfgCls = !mfg ? "unknown" : String(mfg).startsWith("위탁") ? "consigned" : "self";
+  const mfgCls = mfgKind(mfg);
+  const k = favKey(r), on = isFav(k);
   return `<article class="card">
     <div class="body">
       ${cls ? `<div class="cls">${esc(cls)}</div>` : ""}
-      <div class="name">${esc(name)}</div>
+      <div class="namerow"><span class="name">${esc(name)}</span><button type="button" class="fav" data-fav="${esc(k)}" aria-pressed="${on}" aria-label="즐겨찾기">${on ? "★" : "☆"}</button></div>
       <div class="co">${esc(co)}${price !== "" && price != null ? ` · <span class="price">${won(price)}</span>` : ""}</div>
       <div class="chips">
         ${ing ? `<button class="ing" data-q="${esc(ing)}">${esc(ing)}</button>` : ""}
@@ -223,9 +237,11 @@ function card(r, cls) {
 function filtered() {
   const terms = state.q.trim().split(/\s+/).map(norm).filter(Boolean);
   const co = norm(state.co);
+  const mfg = state.mfg;
   const idx = [];
   for (let i = 0; i < rows.length; i++) {
-    if (terms.every((t) => hay[i].includes(t)) && (!co || coNorm[i].includes(co))) idx.push(i);
+    if (terms.every((t) => hay[i].includes(t)) && (!co || coNorm[i].includes(co)) &&
+        (mfg === "all" || mfgKind(rows[i][3]) === mfg)) idx.push(i);
   }
   const num = (v) => (typeof v === "number" ? v : -1);
   if (state.sort === "rate") idx.sort((a, b) => num(rows[b][1]) - num(rows[a][1]));
@@ -235,8 +251,13 @@ function filtered() {
 
 function renderSearch() {
   const idx = filtered();
-  $("meta").innerHTML = `<span><b>${idx.length.toLocaleString()}</b>건${state.q || state.co ? "" : ` (전체)`}</span><span>성분 칩을 누르면 같은 성분 비교</span>`;
-  if (!idx.length) { $("list").innerHTML = `<p class="empty">“${esc([state.q, state.co].filter(Boolean).join(" · "))}”에 맞는 품목이 없습니다.<br>띄어쓰기를 바꾸거나 단어를 줄여 보세요.</p>`; return; }
+  const filtering = state.q || state.co || state.mfg !== "all";
+  $("meta").innerHTML = `<span><b>${idx.length.toLocaleString()}</b>건${filtering ? "" : ` (전체)`}</span><span>성분 칩을 누르면 같은 성분 비교</span>`;
+  if (!idx.length) {
+    const what = [state.q, state.co, state.mfg === "self" ? "자체생산" : state.mfg === "consigned" ? "위탁생산" : ""].filter(Boolean).join(" · ");
+    $("list").innerHTML = `<p class="empty">“${esc(what)}”에 맞는 품목이 없습니다.<br>띄어쓰기를 바꾸거나 조건을 줄여 보세요.</p>`;
+    return;
+  }
   const html = idx.slice(0, state.shown).map((i) => card(rows[i])).join("");
   const rest = idx.length - state.shown;
   $("list").innerHTML = html + (rest > 0 ? `<button class="more" id="more">${Math.min(rest, PAGE)}건 더 보기 (남은 ${rest.toLocaleString()}건)</button>` : "");
@@ -270,13 +291,28 @@ function renderMonth() {
   $("list").innerHTML = out || `<p class="empty">이달 특이사항이 없습니다.</p>`;
 }
 
+function renderFav() {
+  const pos = new Map(rows.map((r, i) => [favKey(r), i]));
+  const found = favs.filter((k) => pos.has(k));
+  const missing = favs.length - found.length;
+  $("meta").innerHTML = `<span><b>${found.length}</b>개 즐겨찾기</span><span>☆를 누르면 추가·해제</span>`;
+  const note = missing
+    ? `<div class="fav-missing"><span>즐겨찾기 ${missing}개는 이번 요율표에 없어요.</span><button type="button" id="fav-clean">정리</button></div>`
+    : "";
+  $("list").innerHTML = note + (found.length
+    ? found.map((k) => card(rows[pos.get(k)])).join("")
+    : `<p class="empty">아직 즐겨찾기가 없어요.<br>검색 결과에서 품목 이름 옆 ☆를 눌러 모아 보세요.</p>`);
+}
+
 function render() {
   if (!DATA) return;
-  $("tab-search").setAttribute("aria-selected", state.tab === "search");
-  $("tab-month").setAttribute("aria-selected", state.tab === "month");
-  $("searchrow").hidden = state.tab !== "search";
+  for (const t of ["search", "month", "fav"]) $("tab-" + t).setAttribute("aria-selected", state.tab === t);
+  $("searchrow").hidden = $("filters").hidden = state.tab !== "search";
   $("clear").hidden = !state.q;
-  state.tab === "search" ? renderSearch() : renderMonth();
+  document.querySelectorAll("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.mfg === state.mfg));
+  if (state.tab === "search") renderSearch();
+  else if (state.tab === "month") renderMonth();
+  else renderFav();
   save();
 }
 
@@ -294,7 +330,31 @@ $("clear").addEventListener("click", () => { search(""); $("q").focus(); });
 $("sort").addEventListener("change", (e) => { state.sort = e.target.value; state.shown = PAGE; render(); });
 $("tab-search").addEventListener("click", () => { state.tab = "search"; render(); });
 $("tab-month").addEventListener("click", () => { state.tab = "month"; render(); window.scrollTo(0, 0); });
+$("tab-fav").addEventListener("click", () => { state.tab = "fav"; render(); window.scrollTo(0, 0); });
+$("filters").addEventListener("click", (e) => {
+  const c = e.target.closest(".chip");
+  if (!c) return;
+  state.mfg = c.dataset.mfg; state.shown = PAGE; render();
+});
 $("list").addEventListener("click", (e) => {
+  const f = e.target.closest("[data-fav]");
+  if (f) {
+    toggleFav(f.dataset.fav);
+    if (state.tab === "fav") { renderFav(); return; }
+    // 검색·이달 변동 화면은 다시 그리지 않고 같은 품목의 별만 바꾼다(스크롤 위치 유지)
+    const on = isFav(f.dataset.fav);
+    document.querySelectorAll(`[data-fav="${CSS.escape(f.dataset.fav)}"]`).forEach((b) => {
+      b.setAttribute("aria-pressed", on); b.textContent = on ? "★" : "☆";
+    });
+    return;
+  }
+  if (e.target.closest("#fav-clean")) {
+    const keys = new Set(rows.map(favKey));
+    favs = favs.filter((k) => keys.has(k));
+    store.set("mr-favs", JSON.stringify(favs));
+    renderFav();
+    return;
+  }
   const t = e.target.closest("[data-q], #more");
   if (!t) return;
   if (t.id === "more") { state.shown += PAGE; renderSearch(); return; }
