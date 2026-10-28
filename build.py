@@ -90,6 +90,15 @@ def clean(v):
     return v
 
 
+def clean_edi(v):
+    """보험코드(H열). 엑셀에 숫자로 저장되면 앞자리 0이 빠지므로(051700030 → 51700030) 9자리로 되돌린다."""
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    if isinstance(v, int):
+        return f"{v:09d}"
+    return clean(v)
+
+
 def is_blank(row):
     return all(c in (None, "") for c in row)
 
@@ -98,11 +107,19 @@ def read_main(ws):
     rows, header_found = [], False
     for r in ws.iter_rows(values_only=True):
         if not header_found:
-            header_found = r and r[0] == "성분명"
+            header_found = bool(r) and clean(r[0]) == "성분명"
             continue
         if is_blank(r):
             continue
-        rows.append([clean(c) for c in r[:8]])  # I열(특이사항)은 제외
+        row = [clean(c) for c in r[:8]]  # I열(특이사항)은 제외
+        row += [""] * (8 - len(row))  # 끝쪽 빈 칸이 잘린 행도 8칸으로
+        row[7] = clean_edi(r[7]) if len(r) > 7 else ""
+        rows.append(row)
+    # 머리글을 못 찾거나 행이 없으면 빈 요율표가 그대로 올라가므로 여기서 멈춘다
+    if not header_found:
+        raise SystemExit("첫 시트에서 A열이 '성분명'인 머리글 행을 찾지 못했습니다. 엑셀 첫 시트를 확인하세요.")
+    if not rows:
+        raise SystemExit("첫 시트 머리글 아래에 데이터가 없습니다. 엑셀 첫 시트를 확인하세요.")
     return rows
 
 
@@ -113,15 +130,22 @@ def read_special(ws):
         if is_blank(r):
             continue
         filled = [c for c in r if c not in (None, "")]
-        if len(filled) == 1 and isinstance(filled[0], str):
-            cur = {"title": clean(filled[0]), "header": None, "rows": []}
+        # 구역 제목: A열 한 칸에만 글자가 있는 행 (예: "9월 요율변동")
+        if len(filled) == 1 and isinstance(r[0], str) and r[0].strip():
+            cur = {"title": clean(r[0]), "header": None, "cols": [], "rows": []}
             sections.append(cur)
         elif cur is not None and cur["header"] is None:
-            cur["header"] = [clean(c) for c in r if c not in (None, "")]
+            # 머리글 중간에 빈 칸이 있어도 열이 밀리지 않게, 머리글이 있는 칸의 위치를 기억한다
+            cur["cols"] = [i for i, c in enumerate(r) if c not in (None, "")]
+            cur["header"] = [clean(r[i]) for i in cur["cols"]]
         elif cur is not None:
-            cur["rows"].append([clean(c) for c in r[: len(cur["header"])]])
+            cur["rows"].append([
+                (clean_edi if name == "보험코드" else clean)(r[i] if i < len(r) else None)
+                for i, name in zip(cur["cols"], cur["header"])
+            ])
     # 특이사항 열은 웹페이지에 싣지 않는다
     for s in sections:
+        s.pop("cols", None)
         if s["header"] and "특이사항" in s["header"]:
             i = s["header"].index("특이사항")
             s["header"].pop(i)
@@ -135,12 +159,14 @@ def load_mfg():
         res = subprocess.run(["ssh", SERVER, "python3", "-"], input=MFG_QUERY, capture_output=True,
                              text=True, encoding="utf-8", timeout=120, check=True)
         mfg = json.loads(res.stdout)
+        if len(mfg) < 1000:  # 평소 2만 건 넘음 - 비정상적으로 적으면 사본을 덮어쓰지 않는다
+            raise ValueError(f"제조형태가 {len(mfg)}건뿐입니다")
         MFG_CACHE.write_text(json.dumps(mfg, ensure_ascii=False), encoding="utf-8")
         return mfg, "서버 DB"
     except (OSError, subprocess.SubprocessError, ValueError) as e:
         if not MFG_CACHE.exists():
             raise SystemExit(f"Druginform 서버 DB 조회 실패, 저장된 사본도 없음: {e}")
-        return json.loads(MFG_CACHE.read_text(encoding="utf-8")), "저장된 사본(서버 접속 실패)"
+        return json.loads(MFG_CACHE.read_text(encoding="utf-8")), f"저장된 사본(서버 조회 실패: {e})"
 
 
 def load_pack(src):
@@ -153,6 +179,8 @@ def load_pack(src):
                              stdout=subprocess.PIPE, stderr=sys.stderr, text=True, encoding="utf-8",
                              timeout=3600, check=True)
         pack = json.loads(res.stdout)
+        if len(pack) < 1000:  # 평소 2만 건 넘음 - 비어 있는 결과를 사본으로 남기면 다음 엑셀까지 다시 안 받는다
+            raise ValueError(f"포장정보가 {len(pack)}건뿐입니다")
         PACK_CACHE.write_text(json.dumps(pack, ensure_ascii=False), encoding="utf-8")
         return pack, "식약처 API"
     except (OSError, subprocess.SubprocessError, ValueError) as e:
@@ -202,6 +230,8 @@ def apply_lookups(mfg, pack, data):
 
 def main():
     files = [p for p in HERE.glob("*.xlsx") if not p.name.startswith("~$")]
+    if not files:
+        raise SystemExit(f"{HERE} 폴더에 요율표 엑셀(.xlsx)이 없습니다.")
     src = max(files, key=lambda p: p.stat().st_mtime)
     wb = openpyxl.load_workbook(src, read_only=True, data_only=True)
     data = {

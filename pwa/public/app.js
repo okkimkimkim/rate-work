@@ -7,7 +7,8 @@ const PAGE = 50;
 const $ = (id) => document.getElementById(id);
 const norm = (s) => String(s).toLowerCase().replace(/\s+/g, "");
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const won = (v) => (v === "" || v == null ? "" : Number(v).toLocaleString("ko-KR") + "원");
+// 숫자가 아닌 약가(예: "비급여")가 오면 NaN원 대신 적힌 그대로 보여준다
+const won = (v) => (v === "" || v == null ? "" : Number.isFinite(Number(v)) ? Number(v).toLocaleString("ko-KR") + "원" : String(v));
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -16,11 +17,14 @@ const store = {
 };
 
 // ── 기기·접속 상태 ────────────────────────────────────────────────
+// 저장이 안 되는 브라우저(개인정보 보호 모드 등)면 null - 그대로 등록하면 서버엔 이 기기로 묶이는데
+// 기기 ID가 남지 않아 다음에 "다른 기기"로 잠기므로 등록 자체를 막는다
 function deviceId() {
   let id = store.get("mr-device");
   if (!id) {
     id = (crypto.randomUUID ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""));
     store.set("mr-device", id);
+    if (store.get("mr-device") !== id) return null;
   }
   return id;
 }
@@ -54,13 +58,18 @@ $("code-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const code = $("code").value.trim();
   if (!code) { $("code-msg").textContent = "코드를 입력해 주세요."; return; }
+  const device = deviceId();
+  if (!device) {
+    $("code-msg").textContent = "이 브라우저는 정보를 저장할 수 없어요(개인정보 보호 모드 등). 일반 모드로 열거나 홈 화면 앱에서 입력해 주세요.";
+    return;
+  }
   $("code-submit").disabled = true;
   $("code-msg").textContent = "";
   try {
     const res = await fetch("/api/activate", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code, device: deviceId() }),
+      body: JSON.stringify({ code, device }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.token) {
@@ -145,8 +154,10 @@ async function loadBanner() {
   let items = [];
   try {
     const res = await fetch("/banner.json", { cache: "no-store" });
+    // 시작·종료일은 이 폰의 날짜(한국 시간) 기준. toISOString()은 UTC라 새벽 0~9시에 하루가 어긋난다
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     items = ((await res.json()).items || []).filter((b) => {
-      const today = new Date().toISOString().slice(0, 10);
       return b.image && (!b.start || b.start <= today) && (!b.end || today <= b.end);
     });
   } catch (e) {}
@@ -276,7 +287,7 @@ function renderMonth() {
         const o = Object.fromEntries(h.map((k, i) => [k, r[i]]));
         const a = o["변경 전"], b = o["변경 후"];
         const dir = b > a ? "up" : b < a ? "down" : "";
-        const f = (v) => (isPrice ? Number(v).toLocaleString("ko-KR") : v);
+        const f = (v) => esc(isPrice && Number.isFinite(Number(v)) && v !== "" ? Number(v).toLocaleString("ko-KR") : v);
         return `<button class="chg" data-q="${esc(o["품목명"])}"><span class="body"><span class="name">${esc(o["품목명"])}</span><br><span class="co">${esc(o["제약사명"])}</span></span><span class="vals"><s>${f(a)}</s> → <b class="${dir}">${f(b)}</b></span></button>`;
       }).join("");
     } else {
@@ -317,6 +328,9 @@ function render() {
 }
 
 function search(q) {
+  // 이달 변동·즐겨찾기 탭에서 품목을 눌렀을 때는 검색 탭에 남아 있던 제약사·생산형태 조건 때문에
+  // 그 품목이 안 보일 수 있으므로 조건을 풀고 찾는다. 검색 탭 안의 성분 칩은 조건을 그대로 둔다.
+  if (state.tab !== "search") { state.co = ""; state.mfg = "all"; $("co").value = ""; }
   state.q = q; state.tab = "search"; state.shown = PAGE;
   $("q").value = q; render(); window.scrollTo(0, 0);
 }

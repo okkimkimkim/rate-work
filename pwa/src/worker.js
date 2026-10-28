@@ -59,7 +59,8 @@ const LOCKED = { error: "device_locked", message: "이미 다른 기기에서 �
 
 async function activate(request, env) {
   let body;
-  try { body = await request.json(); } catch { return json({ error: "bad_request" }, 400); }
+  try { body = await request.json(); } catch { body = null; }
+  if (!body || typeof body !== "object") return json({ error: "bad_request", message: "코드를 다시 확인해 주세요." }, 400);
   const code = normCode(body.code);
   const device = body.device;
   if (code.length < 6 || !validDevice(device)) return json({ error: "bad_request", message: "코드를 다시 확인해 주세요." }, 400);

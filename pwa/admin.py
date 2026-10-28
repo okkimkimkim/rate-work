@@ -54,11 +54,17 @@ if "--code" in ARGS:
     del ARGS[i:i + 2]
 
 
+WRANGLER_JS = HERE / "node_modules" / "wrangler" / "bin" / "wrangler.js"
+
+
 def wrangler(*args, input_text=None, check=True):
-    cmd = ["npx", "wrangler", *args]
+    # npx(=npx.cmd)를 거치면 Windows 명령 프롬프트가 인자를 다시 해석해서 이름 속 %PATH% 같은 글자가
+    # 바뀌어 저장된다 → node로 wrangler를 직접 실행해 인자를 그대로 넘긴다.
+    if not WRANGLER_JS.exists():
+        raise SystemExit("wrangler가 설치돼 있지 않습니다. pwa 폴더에서 `npm install`을 먼저 실행하세요.")
+    cmd = ["node", str(WRANGLER_JS), *args]
     for attempt in range(2):
-        res = subprocess.run(cmd, cwd=HERE, input=input_text, capture_output=True, text=True,
-                             encoding="utf-8", shell=(sys.platform == "win32"))
+        res = subprocess.run(cmd, cwd=HERE, input=input_text, capture_output=True, text=True, encoding="utf-8")
         # 로그인 토큰이 만료된 직후 첫 요청은 Cloudflare가 7403(권한 없음)으로 거절하고,
         # 그 사이 wrangler가 토큰을 새로 받아 두 번째 요청은 성공한다 → 한 번만 다시 시도
         if res.returncode == 0 or "7403" not in (res.stdout + res.stderr):
@@ -79,8 +85,12 @@ def sql_str(v):
 def d1(sql):
     """D1에 SQL 한 문장 실행 → 결과 행 목록"""
     out = wrangler("d1", "execute", DB_NAME, "--local" if LOCAL else "--remote", "--json", "--command", sql)
-    out = out[out.index("["):]  # 앞에 붙는 안내 문구 제거
-    return json.loads(out)[0].get("results", [])
+    # 결과 JSON 앞에 안내·경고 문구가 붙을 수 있어("[WARNING]" 처럼 [로 시작하는 줄 포함), 줄 맨 앞의 "[" 다음에
+    # 줄바꿈이나 "{"가 오는 곳(=JSON 배열 시작)부터 읽는다
+    m = re.search(r"^\[\s*(\{|\])", out, re.M)
+    if not m:
+        raise SystemExit(f"D1 결과를 읽지 못했습니다:\n{out}")
+    return json.loads(out[m.start():])[0].get("results", [])
 
 
 def code_hash(code):
