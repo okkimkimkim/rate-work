@@ -160,6 +160,12 @@
   "데이터 처리 규칙"대로 이 웹앱 쪽에서 Druginform DB 값을 읽어 표시하는 것.
 - git 저장소 생성, GitHub `okkimkimkim/rate-work`(private)에 푸시. 이 폴더에만
   `user.name/email = okkimkimkim` 설정(PC 전역 git 설정 없음). 이 PC에는 GitHub CLI(`gh`)가 없다.
+- **싱크(GitHub 올리기) 방법 — 2026-11-02 정리**: Claude Code 자동 모드의 안전장치가 일반 `git push`(및 `cd … && git push`
+  조합)를 "외부 게시"로 막는다. 사용자가 `D:\AI_dev\.claude\settings.local.json`(이 PC에만 있음, 저장소 밖)에 아래 두 명령만
+  허용하는 규칙을 넣어 두었으므로, Claude는 **정확히 이 두 명령을 따로따로** 실행한다:
+  `git -C "D:/AI_dev/Rate work" pull --ff-only` → `git -C "D:/AI_dev/Rate work" push`. 커밋은 평소처럼 따로.
+  같은 파일의 `autoMode.allow`(안전장치용 자연어 규칙)만으로는 통과되지 않았다. 다른 PC에서 작업하면 그 PC에도
+  같은 설정 파일을 만들어야 하고, 안 되면 사용자가 터미널에서 직접 `git push`.
 
 ### 2026-10-14 — 앱 형태 검토 (결정 대기)
 
@@ -264,6 +270,12 @@
 - `admin.py upload-data`(1.8MB, 버전 `fdd23a3d4ef6e998`) → 실서버에서 2026.10 데이터·10월 탭 확인(임시 확인용 코드는 삭제).
   Artifact에는 올리지 않음.
 - 정기 갱신 소요: 엑셀 구성·변경 내용 확인 1분 + build 10분 남짓(대부분 포장정보) + 업로드 1분.
+
+### 2026-11-02 — 싱크 허용 설정
+
+- 자동 모드 안전장치에 `git push`가 반복해서 막혀(Out-of-Place Publication) 사용자가 터미널에서 직접 push한 뒤,
+  `D:\AI_dev\.claude\settings.local.json`에 rate-work 전용 pull/push 명령 허용 규칙을 넣음(사용자가 직접 생성 — Claude의
+  설정 파일 수정은 Self-Modification으로 막힘). 다시 시작 후 두 명령 모두 통과 확인. 자세한 방법은 위 git 항목.
 
 ## 남은 할 일 / 아이디어
 
