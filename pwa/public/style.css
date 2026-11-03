@@ -139,3 +139,15 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; a
 .fav[aria-pressed="true"] { color: #f0a020; }
 .fav-missing { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--consign-soft); color: var(--consign); font-size: 13px; }
 .fav-missing button { border: 0; border-radius: 8px; padding: 5px 10px; background: var(--consign); color: var(--surface); font-weight: 700; cursor: pointer; }
+
+/* 추가조건: [그리고/또는] + 검색란 + 지우기 줄 */
+.extras { display: grid; gap: 6px; }
+.extras:empty { display: none; }
+.extra { display: flex; gap: 6px; align-items: center; }
+.extra select { flex: none; border: 1.5px solid var(--line); background: var(--surface); border-radius: 10px; padding: 9px 6px; font-size: 14px; font-weight: 700; color: var(--accent); }
+.extra input { flex: 1; min-width: 0; border: 1.5px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 12px; font-size: 16px; }
+.extra input:focus, .extra select:focus { border-color: var(--accent); outline: none; }
+.extra .del { flex: none; border: 0; background: none; width: 32px; height: 32px; font-size: 20px; color: var(--muted); cursor: pointer; }
+.add-cond { border: 1px dashed var(--accent); background: none; color: var(--accent); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.add-cond[hidden] { display: none; }
+.mfg-chips { display: flex; gap: 6px; flex-wrap: wrap; }

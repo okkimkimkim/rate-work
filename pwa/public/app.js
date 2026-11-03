@@ -207,9 +207,13 @@ function setData(d) {
   render();
 }
 
-let state = { tab: "search", q: "", co: "", sort: "base", mfg: "all", shown: PAGE };
+// extra: 추가조건 [{op: "and"|"or", q}] - 검색어 칸 아래에 최대 MAX_EXTRA줄
+const MAX_EXTRA = 3;
+let state = { tab: "search", q: "", co: "", sort: "base", mfg: "all", extra: [], shown: PAGE };
 try { Object.assign(state, JSON.parse(store.get("rate-ui") || "{}"), { shown: PAGE }); } catch (e) {}
-const save = () => store.set("rate-ui", JSON.stringify({ tab: state.tab, q: state.q, co: state.co, sort: state.sort, mfg: state.mfg }));
+if (!Array.isArray(state.extra)) state.extra = [];
+state.extra = state.extra.filter((x) => x && (x.op === "and" || x.op === "or")).slice(0, MAX_EXTRA);
+const save = () => store.set("rate-ui", JSON.stringify({ tab: state.tab, q: state.q, co: state.co, sort: state.sort, mfg: state.mfg, extra: state.extra }));
 
 // 즐겨찾기: 이 폰에만 저장. 보험코드로 기억해서 2달마다 데이터가 바뀌어도 그대로 남는다
 // (보험코드는 행마다 유일 - 앞에 D가 붙은 다른 유통채널 행도 따로 구분됨). 최근에 추가한 것이 앞.
@@ -245,14 +249,27 @@ function card(r, cls) {
   </article>`;
 }
 
+// 검색어 조건들: 맨 위 검색란 + 추가조건 줄. 빈 칸은 빼고, 위에서부터 차례로 그리고(AND)/또는(OR)로 합친다.
+// 예) A 그리고 B 또는 C → (A 그리고 B) 또는 C. 한 칸 안의 띄어쓴 단어들은 지금처럼 모두 들어 있어야 맞음.
+function conditions() {
+  const toTerms = (q) => String(q || "").trim().split(/\s+/).map(norm).filter(Boolean);
+  return [{ op: "and", terms: toTerms(state.q) }, ...state.extra.map((x) => ({ op: x.op, terms: toTerms(x.q) }))]
+    .filter((c) => c.terms.length);
+}
+
 function filtered() {
-  const terms = state.q.trim().split(/\s+/).map(norm).filter(Boolean);
+  const conds = conditions();
   const co = norm(state.co);
   const mfg = state.mfg;
   const idx = [];
   for (let i = 0; i < rows.length; i++) {
-    if (terms.every((t) => hay[i].includes(t)) && (!co || coNorm[i].includes(co)) &&
-        (mfg === "all" || mfgKind(rows[i][3]) === mfg)) idx.push(i);
+    if ((co && !coNorm[i].includes(co)) || (mfg !== "all" && mfgKind(rows[i][3]) !== mfg)) continue;
+    let ok = true;
+    conds.forEach((c, k) => {
+      const hit = c.terms.every((t) => hay[i].includes(t));
+      ok = k === 0 ? hit : c.op === "or" ? ok || hit : ok && hit;
+    });
+    if (ok) idx.push(i);
   }
   const num = (v) => (typeof v === "number" ? v : -1);
   if (state.sort === "rate") idx.sort((a, b) => num(rows[b][1]) - num(rows[a][1]));
@@ -262,10 +279,13 @@ function filtered() {
 
 function renderSearch() {
   const idx = filtered();
-  const filtering = state.q || state.co || state.mfg !== "all";
+  const conds = conditions();
+  const filtering = conds.length || state.co || state.mfg !== "all";
   $("meta").innerHTML = `<span><b>${idx.length.toLocaleString()}</b>건${filtering ? "" : ` (전체)`}</span><span>성분 칩을 누르면 같은 성분 비교</span>`;
   if (!idx.length) {
-    const what = [state.q, state.co, state.mfg === "self" ? "자체생산" : state.mfg === "consigned" ? "위탁생산" : ""].filter(Boolean).join(" · ");
+    const qText = [state.q.trim(), ...state.extra.filter((x) => x.q.trim()).map((x) => (x.op === "or" ? "또는 " : "그리고 ") + x.q.trim())]
+      .filter(Boolean).join(" ");
+    const what = [qText, state.co, state.mfg === "self" ? "자체생산" : state.mfg === "consigned" ? "위탁생산" : ""].filter(Boolean).join(" · ");
     $("list").innerHTML = `<p class="empty">“${esc(what)}”에 맞는 품목이 없습니다.<br>띄어쓰기를 바꾸거나 조건을 줄여 보세요.</p>`;
     return;
   }
@@ -318,7 +338,8 @@ function renderFav() {
 function render() {
   if (!DATA) return;
   for (const t of ["search", "month", "fav"]) $("tab-" + t).setAttribute("aria-selected", state.tab === t);
-  $("searchrow").hidden = $("filters").hidden = state.tab !== "search";
+  $("searchrow").hidden = $("filters").hidden = $("extras").hidden = state.tab !== "search";
+  $("add-cond").hidden = state.extra.length >= MAX_EXTRA;
   $("clear").hidden = !state.q;
   document.querySelectorAll("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.mfg === state.mfg));
   if (state.tab === "search") renderSearch();
@@ -330,7 +351,7 @@ function render() {
 function search(q) {
   // 이달 변동·즐겨찾기 탭에서 품목을 눌렀을 때는 검색 탭에 남아 있던 제약사·생산형태 조건 때문에
   // 그 품목이 안 보일 수 있으므로 조건을 풀고 찾는다. 검색 탭 안의 성분 칩은 조건을 그대로 둔다.
-  if (state.tab !== "search") { state.co = ""; state.mfg = "all"; $("co").value = ""; }
+  if (state.tab !== "search") { state.co = ""; state.mfg = "all"; $("co").value = ""; state.extra = []; drawExtras(); }
   state.q = q; state.tab = "search"; state.shown = PAGE;
   $("q").value = q; render(); window.scrollTo(0, 0);
 }
@@ -374,6 +395,41 @@ $("list").addEventListener("click", (e) => {
   if (t.id === "more") { state.shown += PAGE; renderSearch(); return; }
   search(t.dataset.q);
 });
+
+// ── 추가조건 줄 ───────────────────────────────────────────────
+function drawExtras() {
+  $("extras").innerHTML = state.extra.map((x, k) => `
+    <div class="extra" data-k="${k}">
+      <select aria-label="조건 ${k + 2} 합치는 방법">
+        <option value="and"${x.op === "and" ? " selected" : ""}>그리고</option>
+        <option value="or"${x.op === "or" ? " selected" : ""}>또는</option>
+      </select>
+      <input type="search" inputmode="search" autocomplete="off" placeholder="추가 검색어" value="${esc(x.q)}" aria-label="추가 검색어 ${k + 1}">
+      <button type="button" class="del" aria-label="이 조건 지우기">×</button>
+    </div>`).join("");
+}
+$("add-cond").addEventListener("click", () => {
+  if (state.extra.length >= MAX_EXTRA) return;
+  state.extra.push({ op: "and", q: "" });
+  drawExtras(); render();
+  const inputs = $("extras").querySelectorAll("input"); inputs[inputs.length - 1].focus();
+});
+$("extras").addEventListener("input", (e) => {
+  const row = e.target.closest(".extra"); if (!row || e.target.tagName !== "INPUT") return;
+  state.extra[+row.dataset.k].q = e.target.value;
+  clearTimeout(timer); timer = setTimeout(() => { state.shown = PAGE; render(); }, 150);
+});
+$("extras").addEventListener("change", (e) => {
+  const row = e.target.closest(".extra"); if (!row || e.target.tagName !== "SELECT") return;
+  state.extra[+row.dataset.k].op = e.target.value; state.shown = PAGE; render();
+});
+$("extras").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") e.target.blur(); });
+$("extras").addEventListener("click", (e) => {
+  const del = e.target.closest(".del"); if (!del) return;
+  state.extra.splice(+del.closest(".extra").dataset.k, 1);
+  state.shown = PAGE; drawExtras(); render();
+});
+drawExtras();
 
 $("q").value = state.q;
 $("co").value = state.co;
