@@ -412,6 +412,9 @@ $("meta").addEventListener("click", (e) => {
 
 // ── 추가조건 줄 ───────────────────────────────────────────────
 function drawExtras() {
+  // 조건이 있으면 버튼은 ＋만 남겨 같은 줄의 자리를 아낀다
+  $("add-cond").textContent = state.extra.length ? "＋" : "＋ 추가조건";
+  $("add-cond").setAttribute("aria-label", "추가조건 넣기");
   $("extras").innerHTML = state.extra.map((x, k) => `
     <div class="extra" data-k="${k}">
       <select aria-label="조건 ${k + 2} 합치는 방법">
@@ -426,7 +429,9 @@ $("add-cond").addEventListener("click", () => {
   if (state.extra.length >= MAX_EXTRA) return;
   state.extra.push({ op: "and", q: "" });
   drawExtras(); render();
-  const inputs = $("extras").querySelectorAll("input"); inputs[inputs.length - 1].focus();
+  const inputs = $("extras").querySelectorAll("input"), last = inputs[inputs.length - 1];
+  last.focus();
+  last.closest(".extra").scrollIntoView({ inline: "nearest", block: "nearest" });
 });
 $("extras").addEventListener("input", (e) => {
   const row = e.target.closest(".extra"); if (!row || e.target.tagName !== "INPUT") return;
