@@ -162,3 +162,6 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; a
 .dose-prev { min-width: 0; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .dose[open] .dose-prev { display: none; }
 .dose-full { margin-top: 4px; padding: 8px 10px; border-radius: 8px; background: var(--bg); white-space: pre-line; overflow-wrap: anywhere; line-height: 1.55; }
+
+/* 성분 칩으로 들어온 "같은 성분만" 표시 - 누르면 복합제까지 넓혀 보기 */
+.ing-off { border: 0; background: none; padding: 0; color: var(--accent); font-size: 13px; font-weight: 700; cursor: pointer; }
