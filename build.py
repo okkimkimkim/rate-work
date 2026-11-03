@@ -25,6 +25,8 @@ TEMPLATE = HERE / "template.html"
 OUT = HERE / "요율표.html"
 MFG_CACHE = HERE / "druginform_mfg.json"
 PACK_CACHE = HERE / "druginform_pack.json"
+USE_CACHE = HERE / "druginform_use.json"
+USE_MAX_CHARS = 1200  # 용법용량이 이보다 길면 잘라서 "…(이하 생략)"
 PWA_DATA = HERE / "pwa" / "data.json"
 SERVER = "root@1.234.80.8"
 
@@ -42,6 +44,36 @@ for edi, cons, chk in c.execute("SELECT edi_code, consign_entp_name, mfg_checked
         if code.strip():
             out[code.strip()] = cons or ''
 print(json.dumps(out, ensure_ascii=False))
+"""
+
+# 서버에서 실행할 읽기 전용 조회: 보험코드 → 용법용량(Druginform 상세 화면과 같은 값: e약은요 → 없으면 허가 원문).
+# 허가 원문에는 표가 HTML 태그째 들어 있어 글자만 남기고(칸은 " | ", 줄은 줄바꿈), 같은 문구가 많아 문구 목록 + 번호로 보낸다.
+USE_QUERY = r"""
+import html, json, re, sqlite3
+MAX = __MAX__
+def clean(t):
+    t = re.sub(r"(?i)<br\s*/?>|</p>|</tr>|</li>|</h\d>", "\n", t)
+    t = re.sub(r"(?i)</t[dh]>", " | ", t)
+    t = html.unescape(re.sub(r"<[^>]+>", "", t))
+    lines = [re.sub(r"[ 	 ]+", " ", l).strip(" |") for l in t.splitlines()]
+    t = "\n".join(l for l in lines if l)
+    return t if len(t) <= MAX else t[:MAX].rstrip() + "…(이하 생략)"
+c = sqlite3.connect('file:/opt/drugapp/drugs.db?mode=ro', uri=True)
+texts, index, out = [], {}, {}
+for edi, a, b in c.execute("SELECT edi_code, use_method, use_method_official FROM drugs "
+                           "WHERE edi_code != '' AND (cancel_date IS NULL OR cancel_date = '')"):
+    raw = a or b
+    if not raw:
+        continue
+    t = clean(raw)
+    if not t:
+        continue
+    if t not in index:
+        index[t] = len(texts); texts.append(t)
+    for code in edi.split(','):
+        if code.strip():
+            out[code.strip()] = index[t]
+print(json.dumps({"texts": texts, "map": out}, ensure_ascii=False))
 """
 
 # 서버에서 실행할 식약처 제품허가 상세 API 전체 조회: 보험코드 → 포장단위.
@@ -169,6 +201,23 @@ def load_mfg():
         return json.loads(MFG_CACHE.read_text(encoding="utf-8")), f"저장된 사본(서버 조회 실패: {e})"
 
 
+def load_use():
+    """용법용량 - 제조형태처럼 매번 Druginform 서버 DB에서 새로 읽고, 안 되면 직전 사본."""
+    try:
+        res = subprocess.run(["ssh", SERVER, "python3", "-"], input=USE_QUERY.replace("__MAX__", str(USE_MAX_CHARS)),
+                             capture_output=True, text=True, encoding="utf-8", timeout=300, check=True)
+        use = json.loads(res.stdout)
+        if len(use.get("map", {})) < 1000:
+            raise ValueError(f"용법용량이 {len(use.get('map', {}))}건뿐입니다")
+        USE_CACHE.write_text(json.dumps(use, ensure_ascii=False), encoding="utf-8")
+        return use, "서버 DB"
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        if USE_CACHE.exists():
+            return json.loads(USE_CACHE.read_text(encoding="utf-8")), f"저장된 사본(서버 조회 실패: {e})"
+        print(f"용법용량 조회 실패, 용법용량 없이 만듭니다: {e}")
+        return {"texts": [], "map": {}}, "없음"
+
+
 def load_pack(src):
     """새 엑셀이 들어왔을 때(사본이 엑셀보다 오래됐을 때)만 API로 다시 받는다."""
     if PACK_CACHE.exists() and PACK_CACHE.stat().st_mtime >= src.stat().st_mtime:
@@ -205,14 +254,27 @@ def mfg_label(mfg, edi):
     return f"위탁생산 · {mfg[code]}" if mfg[code] else "자체생산"
 
 
-def apply_lookups(mfg, pack, data):
-    """D열 → 제조형태로 교체, 맨 끝에 포장정보 열 추가."""
-    hit_mfg = hit_pack = 0
+def apply_lookups(mfg, pack, use, data):
+    """D열 → 제조형태로 교체, 맨 끝에 포장정보·용법용량(문구 번호) 열 추가.
+    용법용량 문구는 data["uses"] 목록에 한 번씩만 넣고 행에는 그 번호(-1 = 없음)만 둔다."""
+    hit_mfg = hit_pack = hit_use = 0
+    uses, use_pos = [], {}
+
+    def use_ref(edi):
+        k = use["map"].get(edi_key(edi))
+        if k is None:
+            return -1
+        if k not in use_pos:
+            use_pos[k] = len(uses); uses.append(use["texts"][k])
+        return use_pos[k]
+
     for r in data["rows"]:
         r[3] = mfg_label(mfg, r[7])
         r.append(pack.get(edi_key(r[7]), ""))
+        r.append(use_ref(r[7]))
         hit_mfg += bool(r[3])
         hit_pack += bool(r[8])
+        hit_use += r[9] >= 0
     for s in data["special"]:
         h = s["header"] or []
         if "보험코드" not in h:
@@ -222,10 +284,12 @@ def apply_lookups(mfg, pack, data):
             i = h.index("생동/생산")
             for r in s["rows"]:
                 r[i] = mfg_label(mfg, r[j])
-        h.append("포장")
+        h += ["포장", "용법용량"]
         for r in s["rows"]:
             r.append(pack.get(edi_key(r[j]), ""))
-    return hit_mfg, hit_pack
+            r.append(use_ref(r[j]))
+    data["uses"] = uses
+    return hit_mfg, hit_pack, hit_use
 
 
 def main():
@@ -242,7 +306,8 @@ def main():
     }
     mfg, mfg_src = load_mfg()
     pack, pack_src = load_pack(src)
-    hit_mfg, hit_pack = apply_lookups(mfg, pack, data)
+    use, use_src = load_use()
+    hit_mfg, hit_pack, hit_use = apply_lookups(mfg, pack, use, data)
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/null", payload)
     OUT.write_text(html, encoding="utf-8")
@@ -252,6 +317,7 @@ def main():
           f"{OUT.stat().st_size / 1e6:.1f}MB")
     print(f"제조형태({mfg_src}): {hit_mfg:,}/{len(data['rows']):,}행 매칭")
     print(f"포장정보({pack_src}): {hit_pack:,}/{len(data['rows']):,}행 매칭")
+    print(f"용법용량({use_src}): {hit_use:,}/{len(data['rows']):,}행 매칭, 서로 다른 문구 {len(data['uses']):,}개")
 
 
 if __name__ == "__main__":

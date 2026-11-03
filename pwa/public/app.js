@@ -193,7 +193,8 @@ $("install-btn").addEventListener("click", async () => {
 $("install-close").addEventListener("click", () => { $("install").hidden = true; store.set("mr-install-closed", "1"); });
 
 // ── 검색·이달 변동 화면 (Artifact 버전과 같은 동작) ───────────────────────
-// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지날/대조약, 보험코드, 포장]
+// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지날/대조약, 보험코드, 포장, 용법용량 번호]
+// 용법용량 번호는 DATA.uses(같은 문구는 한 번만 담은 목록)의 위치, -1이면 없음 (build.py가 Druginform DB에서 채움)
 let DATA = null, rows = [], coNorm = [], hay = [];
 
 function setData(d) {
@@ -229,7 +230,8 @@ function toggleFav(k) {
 const mfgKind = (mfg) => (!mfg ? "unknown" : String(mfg).startsWith("위탁") ? "consigned" : "self");
 
 function card(r, cls) {
-  const [ing, rate, co, mfg, name, price, orig, ins, pack] = r;
+  const [ing, rate, co, mfg, name, price, orig, ins, pack, useIdx] = r;
+  const dose = typeof useIdx === "number" && useIdx >= 0 && DATA.uses ? DATA.uses[useIdx] || "" : "";
   const mfgCls = mfgKind(mfg);
   const k = favKey(r), on = isFav(k);
   return `<article class="card">
@@ -242,8 +244,9 @@ function card(r, cls) {
         ${orig ? `<span class="tag">대조약 ${esc(orig)}</span>` : ""}
         <span class="mfg ${mfgCls}">${mfg ? esc(mfg) : "제조형태 확인불가"}</span>
         ${ins ? `<span class="tag">보험 ${esc(ins)}</span>` : ""}
-        ${pack ? `<span class="tag">포장 ${esc(String(pack).replace(/\s*,\s*/g, ", "))}</span>` : ""}
       </div>
+      ${dose ? `<details class="dose"><summary><span class="dose-label">용법용량</span><span class="dose-prev">${esc(dose)}</span></summary><div class="dose-full">${esc(dose)}</div></details>` : ""}
+      ${pack ? `<div class="chips"><span class="tag">포장 ${esc(String(pack).replace(/\s*,\s*/g, ", "))}</span></div>` : ""}
     </div>
     <div class="rate"><span class="l">코드</span><span class="n">${esc(rate)}</span></div>
   </article>`;
@@ -294,7 +297,7 @@ function renderSearch() {
   $("list").innerHTML = html + (rest > 0 ? `<button class="more" id="more">${Math.min(rest, PAGE)}건 더 보기 (남은 ${rest.toLocaleString()}건)</button>` : "");
 }
 
-const HEAD_MAP = { "성분명": 0, "코드": 1, "제약사명": 2, "생동/생산": 3, "품목명": 4, "약가": 5, "오리지날/대조약": 6, "보험코드": 7, "포장": 8 };
+const HEAD_MAP = { "성분명": 0, "코드": 1, "제약사명": 2, "생동/생산": 3, "품목명": 4, "약가": 5, "오리지날/대조약": 6, "보험코드": 7, "포장": 8, "용법용량": 9 };
 function renderMonth() {
   let out = "", total = 0;
   for (const s of DATA.special || []) {
@@ -312,7 +315,7 @@ function renderMonth() {
       }).join("");
     } else {
       out += s.rows.map((r) => {
-        const row = Array(9).fill("");
+        const row = Array(10).fill("");
         h.forEach((k, i) => { if (k in HEAD_MAP) row[HEAD_MAP[k]] = r[i]; });
         return card(row, r[h.indexOf("분류(A)")]);
       }).join("");
