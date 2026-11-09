@@ -146,7 +146,10 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; a
 
 /* 추가조건: [그리고/또는] + 검색란 + 지우기 줄 */
 .extras { display: flex; gap: 6px; }
-.extras:empty { display: none; }
+.extras:empty, .extras-more:empty { display: none; }
+/* 두 번째 조건부터는 아래로 한 줄씩, 화면 폭 전체 사용 */
+.extras-more { display: grid; gap: 6px; }
+.extras-more .extra { width: 100%; }
 .extra { flex: none; width: 216px; height: 31px; display: flex; gap: 3px; align-items: center; }
 .extra select { flex: none; height: 31px; border: 1.5px solid var(--line); background: var(--surface); border-radius: 8px; padding: 0 2px; font-size: 13px; font-weight: 700; color: var(--accent); }
 .extra input { flex: 1; min-width: 0; height: 31px; border: 1.5px solid var(--line); background: var(--surface); border-radius: 8px; padding: 0 8px; font-size: 16px; }

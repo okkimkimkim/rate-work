@@ -46,7 +46,7 @@ for edi, cons, chk in c.execute("SELECT edi_code, consign_entp_name, mfg_checked
 print(json.dumps(out, ensure_ascii=False))
 """
 
-# 서버에서 실행할 읽기 전용 조회: 보험코드 → 용법용량(Druginform 상세 화면과 같은 값: e약은요 → 없으면 허가 원문).
+# 서버에서 실행할 읽기 전용 조회: 보험코드 → 용법용량·효능효과(Druginform 상세 화면과 같은 값: e약은요 → 없으면 허가 원문).
 # 허가 원문에는 표가 HTML 태그째 들어 있어 글자만 남기고(칸은 " | ", 줄은 줄바꿈), 같은 문구가 많아 문구 목록 + 번호로 보낸다.
 USE_QUERY = r"""
 import html, json, re, sqlite3
@@ -59,21 +59,24 @@ def clean(t):
     t = "\n".join(l for l in lines if l)
     return t if len(t) <= MAX else t[:MAX].rstrip() + "…(이하 생략)"
 c = sqlite3.connect('file:/opt/drugapp/drugs.db?mode=ro', uri=True)
-texts, index, out = [], {}, {}
-for edi, a, b in c.execute("SELECT edi_code, use_method, use_method_official FROM drugs "
-                           "WHERE edi_code != '' AND (cancel_date IS NULL OR cancel_date = '')"):
-    raw = a or b
-    if not raw:
-        continue
-    t = clean(raw)
+texts, index, out, eff = [], {}, {}, {}
+def ref(raw):
+    t = clean(raw) if raw else ""
     if not t:
-        continue
+        return None
     if t not in index:
         index[t] = len(texts); texts.append(t)
+    return index[t]
+for edi, a, b, e1, e2 in c.execute("SELECT edi_code, use_method, use_method_official, efficacy, efficacy_official FROM drugs "
+                                   "WHERE edi_code != '' AND (cancel_date IS NULL OR cancel_date = '')"):
+    u, f = ref(a or b), ref(e1 or e2)
     for code in edi.split(','):
-        if code.strip():
-            out[code.strip()] = index[t]
-print(json.dumps({"texts": texts, "map": out}, ensure_ascii=False))
+        code = code.strip()
+        if code and u is not None:
+            out[code] = u
+        if code and f is not None:
+            eff[code] = f
+print(json.dumps({"texts": texts, "map": out, "eff": eff}, ensure_ascii=False))
 """
 
 # 서버에서 실행할 식약처 제품허가 상세 API 전체 조회: 보험코드 → 포장단위.
@@ -202,7 +205,8 @@ def load_mfg():
 
 
 def load_use():
-    """용법용량 - 제조형태처럼 매번 Druginform 서버 DB에서 새로 읽고, 안 되면 직전 사본."""
+    """용법용량·효능효과 - 제조형태처럼 매번 Druginform 서버 DB에서 새로 읽고, 안 되면 직전 사본.
+    {"texts": 문구 목록, "map": 보험코드→용법용량 번호, "eff": 보험코드→효능효과 번호}"""
     try:
         res = subprocess.run(["ssh", SERVER, "python3", "-"], input=USE_QUERY.replace("__MAX__", str(USE_MAX_CHARS)),
                              capture_output=True, text=True, encoding="utf-8", timeout=300, check=True)
@@ -215,7 +219,7 @@ def load_use():
         if USE_CACHE.exists():
             return json.loads(USE_CACHE.read_text(encoding="utf-8")), f"저장된 사본(서버 조회 실패: {e})"
         print(f"용법용량 조회 실패, 용법용량 없이 만듭니다: {e}")
-        return {"texts": [], "map": {}}, "없음"
+        return {"texts": [], "map": {}, "eff": {}}, "없음"
 
 
 def load_pack(src):
@@ -255,13 +259,13 @@ def mfg_label(mfg, edi):
 
 
 def apply_lookups(mfg, pack, use, data):
-    """D열 → 제조형태로 교체, 맨 끝에 포장정보·용법용량(문구 번호) 열 추가.
-    용법용량 문구는 data["uses"] 목록에 한 번씩만 넣고 행에는 그 번호(-1 = 없음)만 둔다."""
-    hit_mfg = hit_pack = hit_use = 0
+    """D열 → 제조형태로 교체, 맨 끝에 포장정보·용법용량·효능효과(문구 번호) 열 추가.
+    용법용량·효능효과 문구는 data["uses"] 목록에 한 번씩만 넣고 행에는 그 번호(-1 = 없음)만 둔다."""
+    hit_mfg = hit_pack = hit_use = hit_eff = 0
     uses, use_pos = [], {}
 
-    def use_ref(edi):
-        k = use["map"].get(edi_key(edi))
+    def use_ref(edi, field="map"):
+        k = use.get(field, {}).get(edi_key(edi))
         if k is None:
             return -1
         if k not in use_pos:
@@ -272,9 +276,11 @@ def apply_lookups(mfg, pack, use, data):
         r[3] = mfg_label(mfg, r[7])
         r.append(pack.get(edi_key(r[7]), ""))
         r.append(use_ref(r[7]))
+        r.append(use_ref(r[7], "eff"))
         hit_mfg += bool(r[3])
         hit_pack += bool(r[8])
         hit_use += r[9] >= 0
+        hit_eff += r[10] >= 0
     for s in data["special"]:
         h = s["header"] or []
         if "보험코드" not in h:
@@ -284,12 +290,13 @@ def apply_lookups(mfg, pack, use, data):
             i = h.index("생동/생산")
             for r in s["rows"]:
                 r[i] = mfg_label(mfg, r[j])
-        h += ["포장", "용법용량"]
+        h += ["포장", "용법용량", "효능효과"]
         for r in s["rows"]:
             r.append(pack.get(edi_key(r[j]), ""))
             r.append(use_ref(r[j]))
+            r.append(use_ref(r[j], "eff"))
     data["uses"] = uses
-    return hit_mfg, hit_pack, hit_use
+    return hit_mfg, hit_pack, hit_use, hit_eff
 
 
 def main():
@@ -307,7 +314,7 @@ def main():
     mfg, mfg_src = load_mfg()
     pack, pack_src = load_pack(src)
     use, use_src = load_use()
-    hit_mfg, hit_pack, hit_use = apply_lookups(mfg, pack, use, data)
+    hit_mfg, hit_pack, hit_use, hit_eff = apply_lookups(mfg, pack, use, data)
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/null", payload)
     OUT.write_text(html, encoding="utf-8")
@@ -317,7 +324,7 @@ def main():
           f"{OUT.stat().st_size / 1e6:.1f}MB")
     print(f"제조형태({mfg_src}): {hit_mfg:,}/{len(data['rows']):,}행 매칭")
     print(f"포장정보({pack_src}): {hit_pack:,}/{len(data['rows']):,}행 매칭")
-    print(f"용법용량({use_src}): {hit_use:,}/{len(data['rows']):,}행 매칭, 서로 다른 문구 {len(data['uses']):,}개")
+    print(f"용법용량({use_src}): {hit_use:,}/{len(data['rows']):,}행, 효능효과 {hit_eff:,}행 매칭, 서로 다른 문구 {len(data['uses']):,}개")
 
 
 if __name__ == "__main__":

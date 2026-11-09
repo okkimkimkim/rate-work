@@ -193,8 +193,13 @@ $("install-btn").addEventListener("click", async () => {
 $("install-close").addEventListener("click", () => { $("install").hidden = true; store.set("mr-install-closed", "1"); });
 
 // ── 검색·이달 변동 화면 (Artifact 버전과 같은 동작) ───────────────────────
-// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지날/대조약, 보험코드, 포장, 용법용량 번호]
-// 용법용량 번호는 DATA.uses(같은 문구는 한 번만 담은 목록)의 위치, -1이면 없음 (build.py가 Druginform DB에서 채움)
+// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지날/대조약, 보험코드, 포장, 용법용량 번호, 효능효과 번호]
+// 번호는 DATA.uses(같은 문구는 한 번만 담은 목록)의 위치, -1이면 없음 (build.py가 Druginform DB에서 채움)
+const textAt = (k) => (typeof k === "number" && k >= 0 && DATA.uses ? DATA.uses[k] || "" : "");
+// 효능효과·용법용량: 접힌 상태는 2줄 미리보기, 제목을 누르면 전체
+const foldBox = (label, text) => (text
+  ? `<details class="dose"><summary><span class="dose-label">${label}</span><span class="dose-prev">${esc(text)}</span></summary><div class="dose-full">${esc(text)}</div></details>`
+  : "");
 let DATA = null, rows = [], coNorm = [], hay = [];
 
 function setData(d) {
@@ -233,8 +238,7 @@ function toggleFav(k) {
 const mfgKind = (mfg) => (!mfg ? "unknown" : String(mfg).startsWith("위탁") ? "consigned" : "self");
 
 function card(r, cls) {
-  const [ing, rate, co, mfg, name, price, orig, ins, pack, useIdx] = r;
-  const dose = typeof useIdx === "number" && useIdx >= 0 && DATA.uses ? DATA.uses[useIdx] || "" : "";
+  const [ing, rate, co, mfg, name, price, orig, ins, pack, useIdx, effIdx] = r;
   const mfgCls = mfgKind(mfg);
   const k = favKey(r), on = isFav(k);
   return `<article class="card">
@@ -248,7 +252,8 @@ function card(r, cls) {
         <span class="mfg ${mfgCls}">${mfg ? esc(mfg) : "제조형태 확인불가"}</span>
         ${ins ? `<span class="tag">보험 ${esc(ins)}</span>` : ""}
       </div>
-      ${dose ? `<details class="dose"><summary><span class="dose-label">용법용량</span><span class="dose-prev">${esc(dose)}</span></summary><div class="dose-full">${esc(dose)}</div></details>` : ""}
+      ${foldBox("효능효과", textAt(effIdx))}
+      ${foldBox("용법용량", textAt(useIdx))}
       ${pack ? `<div class="chips"><span class="tag">포장 ${esc(String(pack).replace(/\s*,\s*/g, ", "))}</span></div>` : ""}
     </div>
     <div class="rate"><span class="l">코드</span><span class="n">${esc(rate)}</span></div>
@@ -300,7 +305,7 @@ function renderSearch() {
   $("list").innerHTML = html + (rest > 0 ? `<button class="more" id="more">${Math.min(rest, PAGE)}건 더 보기 (남은 ${rest.toLocaleString()}건)</button>` : "");
 }
 
-const HEAD_MAP = { "성분명": 0, "코드": 1, "제약사명": 2, "생동/생산": 3, "품목명": 4, "약가": 5, "오리지날/대조약": 6, "보험코드": 7, "포장": 8, "용법용량": 9 };
+const HEAD_MAP = { "성분명": 0, "코드": 1, "제약사명": 2, "생동/생산": 3, "품목명": 4, "약가": 5, "오리지날/대조약": 6, "보험코드": 7, "포장": 8, "용법용량": 9, "효능효과": 10 };
 function renderMonth() {
   let out = "", total = 0;
   for (const s of DATA.special || []) {
@@ -320,7 +325,7 @@ function renderMonth() {
       }).join("");
     } else {
       out += s.rows.map((r) => {
-        const row = Array(10).fill("");
+        const row = Array(11).fill("");
         h.forEach((k, i) => { if (k in HEAD_MAP) row[HEAD_MAP[k]] = r[i]; });
         return card(row, r[h.indexOf("분류(A)")]);
       }).join("");
@@ -346,7 +351,7 @@ function renderFav() {
 function render() {
   if (!DATA) return;
   for (const t of ["search", "month", "fav"]) $("tab-" + t).setAttribute("aria-selected", state.tab === t);
-  $("searchrow").hidden = $("filters").hidden = $("extras").hidden = state.tab !== "search";
+  $("searchrow").hidden = $("filters").hidden = $("extras-more").hidden = state.tab !== "search";
   $("add-cond").hidden = state.extra.length >= MAX_EXTRA;
   $("clear").hidden = !state.q;
   document.querySelectorAll("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.mfg === state.mfg));
@@ -415,7 +420,8 @@ function drawExtras() {
   // 조건이 있으면 버튼은 ＋만 남겨 같은 줄의 자리를 아낀다
   $("add-cond").textContent = state.extra.length ? "＋" : "＋ 추가조건";
   $("add-cond").setAttribute("aria-label", "추가조건 넣기");
-  $("extras").innerHTML = state.extra.map((x, k) => `
+  // 첫 번째 조건은 버튼과 같은 줄, 두 번째부터는 아래로 한 줄씩
+  const rowHtml = (x, k) => `
     <div class="extra" data-k="${k}">
       <select aria-label="조건 ${k + 2} 합치는 방법">
         <option value="and"${x.op === "and" ? " selected" : ""}>그리고</option>
@@ -423,31 +429,35 @@ function drawExtras() {
       </select>
       <input type="search" inputmode="search" autocomplete="off" placeholder="추가 검색어" value="${esc(x.q)}" aria-label="추가 검색어 ${k + 1}">
       <button type="button" class="del" aria-label="이 조건 지우기">×</button>
-    </div>`).join("");
+    </div>`;
+  $("extras").innerHTML = state.extra.slice(0, 1).map(rowHtml).join("");
+  $("extras-more").innerHTML = state.extra.slice(1).map((x, k) => rowHtml(x, k + 1)).join("");
 }
 $("add-cond").addEventListener("click", () => {
   if (state.extra.length >= MAX_EXTRA) return;
   state.extra.push({ op: "and", q: "" });
   drawExtras(); render();
-  const inputs = $("extras").querySelectorAll("input"), last = inputs[inputs.length - 1];
+  const inputs = document.querySelectorAll(".extra input"), last = inputs[inputs.length - 1];
   last.focus();
   last.closest(".extra").scrollIntoView({ inline: "nearest", block: "nearest" });
 });
-$("extras").addEventListener("input", (e) => {
-  const row = e.target.closest(".extra"); if (!row || e.target.tagName !== "INPUT") return;
-  state.extra[+row.dataset.k].q = e.target.value;
-  renderSoon();
-});
-$("extras").addEventListener("change", (e) => {
-  const row = e.target.closest(".extra"); if (!row || e.target.tagName !== "SELECT") return;
-  state.extra[+row.dataset.k].op = e.target.value; state.shown = PAGE; render();
-});
-$("extras").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") e.target.blur(); });
-$("extras").addEventListener("click", (e) => {
-  const del = e.target.closest(".del"); if (!del) return;
-  state.extra.splice(+del.closest(".extra").dataset.k, 1);
-  state.shown = PAGE; drawExtras(); render();
-});
+for (const box of [$("extras"), $("extras-more")]) {
+  box.addEventListener("input", (e) => {
+    const row = e.target.closest(".extra"); if (!row || e.target.tagName !== "INPUT") return;
+    state.extra[+row.dataset.k].q = e.target.value;
+    renderSoon();
+  });
+  box.addEventListener("change", (e) => {
+    const row = e.target.closest(".extra"); if (!row || e.target.tagName !== "SELECT") return;
+    state.extra[+row.dataset.k].op = e.target.value; state.shown = PAGE; render();
+  });
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.tagName === "INPUT") e.target.blur(); });
+  box.addEventListener("click", (e) => {
+    const del = e.target.closest(".del"); if (!del) return;
+    state.extra.splice(+del.closest(".extra").dataset.k, 1);
+    state.shown = PAGE; drawExtras(); render();
+  });
+}
 drawExtras();
 
 $("q").value = state.q;
