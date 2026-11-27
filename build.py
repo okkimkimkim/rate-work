@@ -3,7 +3,7 @@
 사용법: 이 폴더에 새 요율표 엑셀(.xlsx)을 넣고 `python build.py` 실행.
 가장 최근에 수정된 엑셀 파일을 읽어 요율표.html(Artifact용)과 pwa/data.json(PWA용)을 만든다.
 
-D열(생동/생산)은 엑셀 값을 쓰지 않고, H열 보험코드로 Druginform 서버 DB를 읽기 전용으로
+엑셀 양식은 아래 COL 참고(2026-11 '이음 11월' 양식부터). 엑셀의 자사생산 여부 값은 쓰지 않고, I열 보험코드로 Druginform 서버 DB를 읽기 전용으로
 조회해 자체생산/위탁생산(위탁업체명) 값으로 바꿔 넣는다. 서버에 접속할 수 없으면 직전에
 받아둔 druginform_mfg.json 을 쓴다.
 
@@ -138,21 +138,46 @@ def is_blank(row):
     return all(c in (None, "") for c in row)
 
 
+# 엑셀 양식(2026-11 '이음 11월'부터): 첫 시트 머리글 행의 열 위치
+# C 제약사명, E 제품명(품목명), F 성분, I 보험코드, J 약가, K 기본요율(0.37 = 37), P 대조의약품
+COL = {"co": 2, "name": 4, "ing": 5, "edi": 8, "price": 9, "rate": 10, "orig": 15}
+
+
+def to_num(v):
+    """'1965'처럼 글자로 저장된 숫자는 숫자로. '-', '미정' 같은 글자는 그대로."""
+    v = clean(v)
+    if isinstance(v, str) and re.fullmatch(r"\d+(\.\d+)?", v):
+        v = float(v)
+        v = int(v) if v.is_integer() else v
+    return v
+
+
+def to_rate(v):
+    """기본요율 0.37 → 37 (기존 앱과 같은 표시). 0.325 → 32.5"""
+    v = to_num(v)
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        v = round(v * 100, 2)
+        v = int(v) if float(v).is_integer() else v
+    return v
+
+
 def read_main(ws):
+    """행 구조: [성분명, 코드(요율), 제약사명, 제조형태, 품목명, 약가, 오리지널(대조의약품), 보험코드]"""
     rows, header_found = [], False
     for r in ws.iter_rows(values_only=True):
+        r = list(r) + [None] * (16 - len(r))
         if not header_found:
-            header_found = bool(r) and clean(r[0]) == "성분명"
+            header_found = clean(r[COL["name"]]) == "제품명" and clean(r[COL["edi"]]) == "보험코드"
             continue
-        if is_blank(r):
+        if is_blank(r[:16]) or not clean(r[COL["name"]]):
             continue
-        row = [clean(c) for c in r[:8]]  # I열(특이사항)은 제외
-        row += [""] * (8 - len(row))  # 끝쪽 빈 칸이 잘린 행도 8칸으로
-        row[7] = clean_edi(r[7]) if len(r) > 7 else ""
-        rows.append(row)
+        rows.append([
+            clean(r[COL["ing"]]), to_rate(r[COL["rate"]]), clean(r[COL["co"]]), "",
+            clean(r[COL["name"]]), to_num(r[COL["price"]]), clean(r[COL["orig"]]), clean_edi(r[COL["edi"]]),
+        ])
     # 머리글을 못 찾거나 행이 없으면 빈 요율표가 그대로 올라가므로 여기서 멈춘다
     if not header_found:
-        raise SystemExit("첫 시트에서 A열이 '성분명'인 머리글 행을 찾지 못했습니다. 엑셀 첫 시트를 확인하세요.")
+        raise SystemExit("첫 시트에서 E열 '제품명', I열 '보험코드'인 머리글 행을 찾지 못했습니다. 엑셀 첫 시트를 확인하세요.")
     if not rows:
         raise SystemExit("첫 시트 머리글 아래에 데이터가 없습니다. 엑셀 첫 시트를 확인하세요.")
     return rows
@@ -309,7 +334,8 @@ def main():
         "source": src.stem,
         "month": (re.search(r"\d{4}\.\d{2}", src.stem) or [src.stem])[0],
         "rows": read_main(wb.worksheets[0]),
-        "special": read_special(wb.worksheets[1]) if len(wb.worksheets) > 1 else [],
+        # 두 번째 시트(프로모션)는 싣지 않는다 - 앱의 'O월 변동' 탭은 2026-11에 없앰
+        "special": [],
     }
     mfg, mfg_src = load_mfg()
     pack, pack_src = load_pack(src)

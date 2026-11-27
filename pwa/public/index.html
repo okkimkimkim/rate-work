@@ -65,15 +65,18 @@
     </div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="tab-search" aria-selected="true">전체 검색</button>
-      <button class="tab" role="tab" id="tab-month" aria-selected="false">이달 변동</button>
+      <button class="tab reset" type="button" id="reset-all">전체리셋</button>
       <button class="tab" role="tab" id="tab-fav" aria-selected="false">★ 즐겨찾기</button>
     </div>
     <div class="searchrow" id="searchrow">
       <div class="search">
-        <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="성분·품목·제약사·대조약·보험코드">
+        <input id="q" type="search" inputmode="search" autocomplete="off" placeholder="성분·품목·제약사·오리지널·보험코드">
         <button id="clear" aria-label="검색어 지우기" hidden>×</button>
       </div>
-      <input id="co" type="search" autocomplete="off" placeholder="제약사" aria-label="제약사로 거르기">
+      <div class="search co-box">
+        <input id="co" type="search" autocomplete="off" placeholder="제약사" aria-label="제약사로 거르기">
+        <button id="co-clear" class="x" aria-label="제약사 지우기" hidden>×</button>
+      </div>
       <select id="sort" aria-label="정렬">
         <option value="base">기본순</option>
         <option value="rate">코드↓</option>

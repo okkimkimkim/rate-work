@@ -1,6 +1,6 @@
 // 앱 화면 파일만 캐시한다(네트워크 우선, 끊겼을 때만 캐시). 요율 데이터(/api/data)는 app.js가
 // 토큰과 함께 따로 받아 자체 캐시에 보관하므로 여기서는 손대지 않는다.
-const CACHE = "mine-rate-shell-v2";
+const CACHE = "mine-rate-shell-v3";
 const SHELL = ["/", "/install", "/app.js", "/style.css", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {

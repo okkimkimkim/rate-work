@@ -192,8 +192,8 @@ $("install-btn").addEventListener("click", async () => {
 });
 $("install-close").addEventListener("click", () => { $("install").hidden = true; store.set("mr-install-closed", "1"); });
 
-// ── 검색·이달 변동 화면 (Artifact 버전과 같은 동작) ───────────────────────
-// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지날/대조약, 보험코드, 포장, 용법용량 번호, 효능효과 번호]
+// ── 검색 화면 ───────────────────────
+// 행 구조: [성분명, 코드, 제약사명, 제조형태, 품목명, 약가, 오리지널(대조의약품), 보험코드, 포장, 용법용량 번호, 효능효과 번호]
 // 번호는 DATA.uses(같은 문구는 한 번만 담은 목록)의 위치, -1이면 없음 (build.py가 Druginform DB에서 채움)
 const textAt = (k) => (typeof k === "number" && k >= 0 && DATA.uses ? DATA.uses[k] || "" : "");
 // 효능효과·용법용량: 접힌 상태는 2줄 미리보기, 제목을 누르면 전체
@@ -207,9 +207,7 @@ function setData(d) {
   rows = d.rows || [];
   coNorm = rows.map((r) => norm(r[2]));
   hay = rows.map((r) => norm([r[0], r[2], r[4], r[6], r[7]].join("|")));
-  const mon = (String(d.month || "").split(".")[1] || "").replace(/^0/, "");
   $("src").textContent = d.source || "";
-  $("tab-month").textContent = (mon ? mon + "월" : "이달") + " 변동";
   render();
 }
 
@@ -222,6 +220,7 @@ if (!Array.isArray(state.extra)) state.extra = [];
 state.extra = state.extra.filter((x) => x && (x.op === "and" || x.op === "or")).slice(0, MAX_EXTRA)
   .map((x) => ({ op: x.op, q: String(x.q ?? "") }));
 if (state.ing !== state.q) state.ing = "";
+if (state.tab !== "fav") state.tab = "search"; // 예전의 'O월 변동' 탭은 2026-11에 없앰
 const save = () => store.set("rate-ui", JSON.stringify({ tab: state.tab, q: state.q, co: state.co, sort: state.sort, mfg: state.mfg, extra: state.extra, ing: state.ing }));
 
 // 즐겨찾기: 이 폰에만 저장. 보험코드로 기억해서 2달마다 데이터가 바뀌어도 그대로 남는다
@@ -237,21 +236,20 @@ function toggleFav(k) {
 
 const mfgKind = (mfg) => (!mfg ? "unknown" : String(mfg).startsWith("위탁") ? "consigned" : "self");
 
-function card(r, cls) {
+function card(r) {
   const [ing, rate, co, mfg, name, price, orig, ins, pack, useIdx, effIdx] = r;
   const mfgCls = mfgKind(mfg);
   const k = favKey(r), on = isFav(k);
   return `<article class="card">
     <div class="body">
-      ${cls ? `<div class="cls">${esc(cls)}</div>` : ""}
       <div class="namerow"><span class="name">${esc(name)}</span><button type="button" class="fav" data-fav="${esc(k)}" aria-pressed="${on}" aria-label="즐겨찾기">${on ? "★" : "☆"}</button></div>
       <div class="co">${esc(co)}${price !== "" && price != null ? ` · <span class="price">${won(price)}</span>` : ""}</div>
       <div class="chips">
         ${ing ? `<button class="ing" data-q="${esc(ing)}">${esc(ing)}</button>` : ""}
-        ${orig ? `<span class="tag">대조약 ${esc(orig)}</span>` : ""}
         <span class="mfg ${mfgCls}">${mfg ? esc(mfg) : "제조형태 확인불가"}</span>
-        ${ins ? `<span class="tag">보험 ${esc(ins)}</span>` : ""}
       </div>
+      ${orig ? `<div class="line">오리지널: ${esc(orig)}</div>` : ""}
+      ${ins ? `<div class="line">보험 ${esc(ins)}</div>` : ""}
       ${foldBox("효능효과", textAt(effIdx))}
       ${foldBox("용법용량", textAt(useIdx))}
       ${pack ? `<div class="chips"><span class="tag">포장 ${esc(String(pack).replace(/\s*,\s*/g, ", "))}</span></div>` : ""}
@@ -305,36 +303,6 @@ function renderSearch() {
   $("list").innerHTML = html + (rest > 0 ? `<button class="more" id="more">${Math.min(rest, PAGE)}건 더 보기 (남은 ${rest.toLocaleString()}건)</button>` : "");
 }
 
-const HEAD_MAP = { "성분명": 0, "코드": 1, "제약사명": 2, "생동/생산": 3, "품목명": 4, "약가": 5, "오리지날/대조약": 6, "보험코드": 7, "포장": 8, "용법용량": 9, "효능효과": 10 };
-function renderMonth() {
-  let out = "", total = 0;
-  for (const s of DATA.special || []) {
-    const h = s.header || [];
-    total += s.rows.length;
-    out += `<h2>${esc(s.title)}<span>${s.rows.length}건</span></h2>`;
-    if (h.includes("변경 전")) {
-      const isPrice = /약가/.test(s.title);
-      out += s.rows.map((r) => {
-        const o = Object.fromEntries(h.map((k, i) => [k, r[i]]));
-        const a = o["변경 전"], b = o["변경 후"];
-        const dir = b > a ? "up" : b < a ? "down" : "";
-        const f = (v) => esc(isPrice && Number.isFinite(Number(v)) && v !== "" ? Number(v).toLocaleString("ko-KR") : v);
-        // 엑셀 품목명 뒤의 메모(예: "글리앙정10mg (※ 10월 24일 가산종료)")는 떼고 검색한다
-        const key = String(o["품목명"]).replace(/\s+[(（\[].*$/, "");
-        return `<button class="chg" data-q="${esc(key)}"><span class="body"><span class="name">${esc(o["품목명"])}</span><br><span class="co">${esc(o["제약사명"])}</span></span><span class="vals"><s>${f(a)}</s> → <b class="${dir}">${f(b)}</b></span></button>`;
-      }).join("");
-    } else {
-      out += s.rows.map((r) => {
-        const row = Array(11).fill("");
-        h.forEach((k, i) => { if (k in HEAD_MAP) row[HEAD_MAP[k]] = r[i]; });
-        return card(row, r[h.indexOf("분류(A)")]);
-      }).join("");
-    }
-  }
-  $("meta").innerHTML = `<span><b>${total}</b>건 변동</span><span>요율·약가 변동 항목을 누르면 검색</span>`;
-  $("list").innerHTML = out || `<p class="empty">이달 특이사항이 없습니다.</p>`;
-}
-
 function renderFav() {
   const pos = new Map(rows.map((r, i) => [favKey(r), i]));
   const found = favs.filter((k) => pos.has(k));
@@ -350,19 +318,19 @@ function renderFav() {
 
 function render() {
   if (!DATA) return;
-  for (const t of ["search", "month", "fav"]) $("tab-" + t).setAttribute("aria-selected", state.tab === t);
+  for (const t of ["search", "fav"]) $("tab-" + t).setAttribute("aria-selected", state.tab === t);
   $("searchrow").hidden = $("filters").hidden = $("extras-more").hidden = state.tab !== "search";
   $("add-cond").hidden = state.extra.length >= MAX_EXTRA;
   $("clear").hidden = !state.q;
+  $("co-clear").hidden = !state.co;
   document.querySelectorAll("#filters .chip").forEach((c) => c.setAttribute("aria-pressed", c.dataset.mfg === state.mfg));
   if (state.tab === "search") renderSearch();
-  else if (state.tab === "month") renderMonth();
   else renderFav();
   save();
 }
 
 function search(q, exact) {
-  // 이달 변동·즐겨찾기 탭에서 품목을 눌렀을 때는 검색 탭에 남아 있던 제약사·생산형태 조건 때문에
+  // 즐겨찾기 탭에서 품목을 눌렀을 때는 검색 탭에 남아 있던 제약사·생산형태 조건 때문에
   // 그 품목이 안 보일 수 있으므로 조건을 풀고 찾는다. 검색 탭 안의 성분 칩은 조건을 그대로 둔다.
   if (state.tab !== "search") { state.co = ""; state.mfg = "all"; $("co").value = ""; state.extra = []; drawExtras(); }
   state.q = q; state.ing = exact ? q : ""; state.tab = "search"; state.shown = PAGE;
@@ -372,14 +340,20 @@ function search(q, exact) {
 let timer;
 // 입력값은 바로 state에 넣고 다시 그리기만 늦춘다 - 값까지 늦추면 0.15초 안에 다른 칸을 입력할 때 앞 칸 입력이 사라진다
 const renderSoon = () => { state.shown = PAGE; clearTimeout(timer); timer = setTimeout(render, 150); };
-$("co").addEventListener("input", (e) => { state.co = e.target.value; renderSoon(); });
+$("co").addEventListener("input", (e) => { state.co = e.target.value; $("co-clear").hidden = !state.co; renderSoon(); });
+$("co-clear").addEventListener("click", () => { state.co = ""; $("co").value = ""; state.shown = PAGE; render(); $("co").focus(); });
 $("co").addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
 $("q").addEventListener("input", (e) => { state.q = e.target.value; state.ing = ""; renderSoon(); });
 $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
 $("clear").addEventListener("click", () => { search(""); $("q").focus(); });
 $("sort").addEventListener("change", (e) => { state.sort = e.target.value; state.shown = PAGE; render(); });
 $("tab-search").addEventListener("click", () => { state.tab = "search"; render(); });
-$("tab-month").addEventListener("click", () => { state.tab = "month"; render(); window.scrollTo(0, 0); });
+// 전체리셋: 검색어·추가조건·제약사·생산형태·정렬을 모두 처음 상태로 (즐겨찾기는 그대로)
+$("reset-all").addEventListener("click", () => {
+  Object.assign(state, { tab: "search", q: "", co: "", sort: "base", mfg: "all", extra: [], ing: "", shown: PAGE });
+  $("q").value = ""; $("co").value = ""; $("sort").value = "base";
+  drawExtras(); render(); window.scrollTo(0, 0);
+});
 $("tab-fav").addEventListener("click", () => { state.tab = "fav"; render(); window.scrollTo(0, 0); });
 $("filters").addEventListener("click", (e) => {
   const c = e.target.closest(".chip");
@@ -391,7 +365,7 @@ $("list").addEventListener("click", (e) => {
   if (f) {
     toggleFav(f.dataset.fav);
     if (state.tab === "fav") { renderFav(); return; }
-    // 검색·이달 변동 화면은 다시 그리지 않고 같은 품목의 별만 바꾼다(스크롤 위치 유지)
+    // 검색 화면은 다시 그리지 않고 같은 품목의 별만 바꾼다(스크롤 위치 유지)
     const on = isFav(f.dataset.fav);
     document.querySelectorAll(`[data-fav="${CSS.escape(f.dataset.fav)}"]`).forEach((b) => {
       b.setAttribute("aria-pressed", on); b.textContent = on ? "★" : "☆";
