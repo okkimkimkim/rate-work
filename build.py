@@ -16,6 +16,7 @@ import sys
 import json
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import openpyxl
@@ -132,6 +133,16 @@ def clean_edi(v):
     if isinstance(v, int):
         return f"{v:09d}"
     return clean(v)
+
+
+def source_label(src):
+    """화면 오른쪽 위 문구. 월은 파일 이름의 'N월', 연도는 파일 수정 시각 기준
+    (12월에 받은 '1월' 파일은 다음 해). 파일 이름에 'N월'이 없으면 수정한 달."""
+    t = datetime.fromtimestamp(src.stat().st_mtime)
+    m = re.search(r"(\d{1,2})월", src.stem)
+    month = int(m.group(1)) if m else t.month
+    year = t.year + (1 if month - t.month < -6 else -1 if month - t.month > 6 else 0)
+    return f"법인별 차이가 있을 수 있습니다. {year % 100}년 {month}월 기준"
 
 
 def is_blank(row):
@@ -331,7 +342,7 @@ def main():
     src = max(files, key=lambda p: p.stat().st_mtime)
     wb = openpyxl.load_workbook(src, read_only=True, data_only=True)
     data = {
-        "source": src.stem,
+        "source": source_label(src),
         "month": (re.search(r"\d{4}\.\d{2}", src.stem) or [src.stem])[0],
         "rows": read_main(wb.worksheets[0]),
         # 두 번째 시트(프로모션)는 싣지 않는다 - 앱의 'O월 변동' 탭은 2026-11에 없앰
